@@ -373,15 +373,15 @@ async function delProd(id) {
   if (error) return toast('ลบไม่สำเร็จ: ' + error.message);
   closeM(); loadDataFromSupabase(); toast('ลบสินค้าแล้ว');
 }
-// --- ฟังก์ชันแก้ไขยอดสินค้าคงเหลือด้วยตนเอง (ปรับสต็อก) ---
-function adjustStockManual(pid) {
+// --- ฟังก์ชันแก้ไขยอดสินค้าคงเหลือด้วยตนเอง (ปรับสต็อก - บันทึกเข้า Supabase) ---
+async function adjustStockManual(pid) {
   const p = D.products.find(x => x.id === pid);
   if (!p) return;
   const k = calc();
   const currentStock = k.stock(p);
 
   const newStockStr = prompt(`ปรับแก้สต็อกสินค้า: [${p.code}] ${p.name}\nจำนวนคงเหลือปัจจุบัน: ${currentStock} ${p.unit}\n\nกรุณากรอกจำนวนสต็อกคงเหลือที่ถูกต้อง (จำนวนจริง):`, currentStock);
-  if (newStockStr === null) return;
+  if (newStockStr === null) return; // กด Cancel
 
   const newStock = parseInt(newStockStr);
   if (isNaN(newStock)) {
@@ -394,6 +394,29 @@ function adjustStockManual(pid) {
     toast('ยอดสต็อกตรงกันอยู่แล้ว ไม่มีการเปลี่ยนแปลง');
     return;
   }
+
+  const newRestock = {
+    id: 'ADJ-' + Date.now(),
+    pid: p.id,
+    ts: Date.now(),
+    date: today(),
+    packs: 0,
+    per: 1,
+    units: diff, // บันทึกส่วนต่าง (สามารถเป็นบวกหรือลบได้ เพื่อปรับยอดสต็อกให้ตรง)
+    cost: 0,
+    note: 'ปรับสต็อกด้วยตนเองจากหน้าคลังสินค้า'
+  };
+
+  try {
+    const { error } = await sb.from('restocks').insert([newRestock]);
+    if (error) throw error;
+
+    toast(`ปรับสต็อกสินค้า ${p.name} เป็น ${newStock} ${p.unit} เรียบร้อยแล้ว`);
+    loadDataFromSupabase(); // ดึงข้อมูลล่าสุดจาก Supabase มาแสดงผลใหม่
+  } catch (err) {
+    toast('ปรับสต็อกไม่สำเร็จ: ' + err.message);
+  }
+}
 
   if (!D.restocks) D.restocks = [];
   D.restocks.push({
