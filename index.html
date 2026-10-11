@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ร้านสวัสดิการทหารม้า - ระบบขายและสต็อก</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div><h1>🐴 ร้านสวัสดิการทหารม้า</h1><span>ระบบขายและรายงาน </span></div>
+  <div class="row" style="flex:none;gap:6px">
+    <button class="btn s sm" style="color:#fff;border-color:#fff" onclick="fAudit()">🔍 ตรวจสต็อก</button>
+    <button class="btn s sm" style="color:#fff;border-color:#fff" onclick="fSettings()">⚙️ ตั้งค่า</button>
+  </div>
+</header>
+<div id="app"><div style="text-align:center;padding:50px">กำลังโหลดข้อมูลจาก Supabase...</div></div>
+<nav id="nav"></nav>
+<div id="mo"><div id="mb"></div></div>
+<div id="toast"></div>
+
+<script src="script.js"></script>
+</body>
+</html>
