@@ -633,6 +633,15 @@ const sumS = arr => arr.reduce((a, s) => {
   a.cost += Number(s.cost) || 0;
   return a;
 }, { rev: 0, cost: 0 });
+const daysBack = n => {
+  let arr = [];
+  for (let i = n - 1; i >= 0; i--) {
+    let d = new Date();
+    d.setDate(d.getDate() - i);
+    arr.push(d.toISOString().split('T')[0]);
+  }
+  return arr;
+};
 
 let repViewMode = 'daily'; // มุมมองเริ่มต้น (daily, weekly, monthly, quarterly)
 
