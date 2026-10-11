@@ -240,8 +240,7 @@ async function checkout() {
     toast('บันทึกการขายไม่สำเร็จ: ' + err.message);
   }
 }
-
-// --- หน้าแสดงผลคลังสินค้า (vStock) ฉบับอัปเดตมีปุ่มปรับสต็อก ---
+// --- หน้าแสดงผลคลังสินค้า (vStock) ฉบับสมบูรณ์มีปุ่มปรับสต็อก ---
 function vStock() {
   const k = calc();
   const rows = D.products.slice().sort((a,b)=>a.code>b.code?1:-1).map(p => {
