@@ -628,8 +628,11 @@ function stmt(id) {
   w.document.close();
 }
 
-const sumS = arr => arr.reduce((a, s) => ({rev: a.rev + s.total, cost: a.cost + (s.cost || 0)}), {rev: 0, cost: 0});
-function daysBack(n) { const a = []; for (let i = n - 1; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); a.push(ds(d)); } return a; }
+const sumS = arr => arr.reduce((a, s) => {
+  const rev = +s.total || +s.amount || +s.total_amount || 0;
+  const cost = +s.cost || (s.items || []).reduce((ci, i) => ci + (i.qty * (i.cost || 0)), 0);
+  return { rev: a.rev + rev, cost: a.cost + cost };
+}, { rev: 0, cost: 0 });
 
 let repViewMode = 'daily'; // มุมมองเริ่มต้น (daily, weekly, monthly, quarterly)
 
