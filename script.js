@@ -241,16 +241,33 @@ async function checkout() {
   }
 }
 
-// --- คลังสินค้าพร้อมปุ่ม Export ---
-function vStock(k) {
-  let rows = '';
-  D.products.slice().sort((a,b)=>a.code>b.code?1:-1).forEach(p => {
+// --- หน้าแสดงผลคลังสินค้า (vStock) ฉบับอัปเดตมีปุ่มปรับสต็อก ---
+function vStock() {
+  const k = calc();
+  const rows = D.products.slice().sort((a,b)=>a.code>b.code?1:-1).map(p => {
     const s = stat(p, k), c = k.cost(p);
-    rows += '<tr><td><b>'+(p.icon||'🥤')+' '+p.name+'</b><div class="mu">'+p.code+'</div></td><td class="'+(k.stock(p)<0?'neg':'')+'">'+k.stock(p)+' '+p.unit+'</td><td>'+F(p.price)+'</td><td>'+F(c)+'</td><td class="'+(p.price-c<0?'neg':'')+'">'+F(p.price-c)+' <span class="mu">('+(p.price>0?F((p.price-c)/p.price*100):0)+'%)</span></td><td><span class="tag '+s[1]+'">'+s[0]+'</span></td><td><button class="btn s sm" onclick="gate(()=>fRestock(\''+p.id+'\'))">รับของ</button> <button class="btn s sm" onclick="gate(()=>fProd(\''+p.id+'\'))">แก้</button></td></tr>';
-  });
-  return '<div class="row sp"><h2>📦 คลังสินค้า</h2><div class="row" style="flex:none;gap:6px"><button class="btn sm s" onclick="exportStockExcel()">📥 Excel</button><button class="btn sm s" onclick="window.print()">🖨 PDF</button><button class="btn sm" onclick="gate(()=>fProd())">+ เพิ่มสินค้า</button></div></div><div class="card tbl"><table><tr><th>สินค้า</th><th>คงเหลือ</th><th>ราคาขาย</th><th>ทุน/หน่วย</th><th>กำไร/หน่วย</th><th>สถานะ</th><th>จัดการ</th></tr>'+rows+'</table></div>';
-}
+    return '<tr><td><b>' + esc(p.name) + '</b><br><span class="mu">' + p.code + '</span></td>' +
+      '<td><b>' + k.stock(p) + '</b> ' + p.unit + '</td>' +
+      '<td>' + F(p.price) + ' ฿</td>' +
+      '<td>' + F(c) + ' ฿</td>' +
+      '<td><b style="color:var(--pr)">' + F(p.price - c) + ' ฿</b> <span class="mu">(' + ((p.price - c) / p.price * 100).toFixed(1) + '%)</span></td>' +
+      '<td><span class="badge ' + (s[1] === 'ok' ? 'ok' : 'er') + '">' + s[0] + '</span></td>' +
+      '<td><div class="row" style="gap:4px">' +
+        '<button class="btn s sm" onclick="adjustStockManual(\'' + p.id + '\')">ปรับสต็อก</button>' +
+        '<button class="btn s sm" onclick="gate(()=>openRestockModal(\'' + p.id + '\'))">รับของ</button>' +
+        '<button class="btn sm" onclick="gate(()=>openProdModal(\'' + p.id + '\'))">แก้</button>' +
+      '</div></td></tr>';
+  }).join('') || '<tr><td colspan="7" style="text-align:center" class="mu">ยังไม่มีสินค้าในระบบ</td></tr>';
 
+  return '<div class="row sp" style="margin-bottom:12px">' +
+    '<h2>📦 คลังสินค้า</h2>' +
+    '<div class="row" style="flex:none;gap:6px">' +
+      '<button class="btn sm s" onclick="exportStockExcel()">📥 Excel</button>' +
+      '<button class="btn sm" onclick="window.print()">🖨 พิมพ์ PDF / รายงาน</button>' +
+      '<button class="btn sm p" onclick="gate(()=>openProdModal())">+ เพิ่มสินค้า</button>' +
+    '</div></div>' +
+    '<div class="card tbl"><table><tr><th>สินค้า</th><th>คงเหลือ</th><th>ราคาขาย</th><th>ทุน/หน่วย</th><th>กำไร/หน่วย</th><th>สถานะ</th><th>จัดการ</th></tr>' + rows + '</table></div>';
+}
 function exportStockExcel() {
   const k = calc();
   let rows = [['รหัสสินค้า', 'ชื่อสินค้า', 'คงเหลือ', 'หน่วย', 'ราคาขาย (บาท)', 'ทุน/หน่วย (บาท)', 'กำไร/หน่วย (บาท)', 'สถานะ']];
@@ -356,6 +373,41 @@ async function delProd(id) {
   const { error } = await sb.from('products').delete().eq('id', id);
   if (error) return toast('ลบไม่สำเร็จ: ' + error.message);
   closeM(); loadDataFromSupabase(); toast('ลบสินค้าแล้ว');
+}
+// --- ฟังก์ชันแก้ไขยอดสินค้าคงเหลือด้วยตนเอง (ปรับสต็อก) ---
+function adjustStockManual(pid) {
+  const p = D.products.find(x => x.id === pid);
+  if (!p) return;
+  const k = calc();
+  const currentStock = k.stock(p);
+
+  const newStockStr = prompt(`ปรับแก้สต็อกสินค้า: [${p.code}] ${p.name}\nจำนวนคงเหลือปัจจุบัน: ${currentStock} ${p.unit}\n\nกรุณากรอกจำนวนสต็อกคงเหลือที่ถูกต้อง (จำนวนจริง):`, currentStock);
+  if (newStockStr === null) return;
+
+  const newStock = parseInt(newStockStr);
+  if (isNaN(newStock)) {
+    alert('กรุณากรอกเป็นตัวเลขเท่านั้น');
+    return;
+  }
+
+  const diff = newStock - currentStock;
+  if (diff === 0) {
+    toast('ยอดสต็อกตรงกันอยู่แล้ว ไม่มีการเปลี่ยนแปลง');
+    return;
+  }
+
+  if (!D.restocks) D.restocks = [];
+  D.restocks.push({
+    id: 'ADJ-' + Date.now(),
+    date: today(),
+    ts: Date.now(),
+    items: [{ pid: p.id, name: p.name, qty: diff, cost: k.cost(p) }],
+    note: 'ปรับสต็อกด้วยตนเองจากหน้าคลังสินค้า'
+  });
+
+  saveData();
+  render();
+  toast(`ปรับสต็อกสินค้า ${p.name} เป็น ${newStock} ${p.unit} เรียบร้อยแล้ว`);
 }
 
 function fRestock(id) {
