@@ -373,7 +373,7 @@ async function delProd(id) {
   if (error) return toast('ลบไม่สำเร็จ: ' + error.message);
   closeM(); loadDataFromSupabase(); toast('ลบสินค้าแล้ว');
 }
-// --- ฟังก์ชันแก้ไขยอดสินค้าคงเหลือด้วยตนเอง (ปรับสต็อก - บันทึกเข้า Supabase) ---
+// --- ฟังก์ชันแก้ไขยอดสินค้าคงเหลือด้วยตนเอง (อัปเดต buy_qty โดยตรง) ---
 async function adjustStockManual(pid) {
   const p = D.products.find(x => x.id === pid);
   if (!p) return;
@@ -395,43 +395,21 @@ async function adjustStockManual(pid) {
     return;
   }
 
-  const newRestock = {
-    id: 'ADJ-' + Date.now(),
-    pid: p.id,
-    ts: Date.now(),
-    date: today(),
-    packs: 0,
-    per: 1,
-    units: diff, // บันทึกส่วนต่าง (สามารถเป็นบวกหรือลบได้ เพื่อปรับยอดสต็อกให้ตรง)
-    cost: 0,
-    note: 'ปรับสต็อกด้วยตนเองจากหน้าคลังสินค้า'
-  };
+  // คำนวณยอดซื้อตั้งต้นใหม่ เพื่อให้สต็อกคงเหลือเท่ากับจำนวนที่กรอกจริง
+  const soldQty = k.sold[pid] || 0;
+  const histQty = p.hist || 0;
+  const newBuyQty = newStock + soldQty + histQty;
 
   try {
-    const { error } = await sb.from('restocks').insert([newRestock]);
+    const { error } = await sb.from('products').update({ buy_qty: newBuyQty }).eq('id', pid);
     if (error) throw error;
 
     toast(`ปรับสต็อกสินค้า ${p.name} เป็น ${newStock} ${p.unit} เรียบร้อยแล้ว`);
-    loadDataFromSupabase(); // ดึงข้อมูลล่าสุดจาก Supabase มาแสดงผลใหม่
+    loadDataFromSupabase(); // โหลดข้อมูลใหม่มาแสดงผลทันที
   } catch (err) {
     toast('ปรับสต็อกไม่สำเร็จ: ' + err.message);
   }
 }
-
-  if (!D.restocks) D.restocks = [];
-  D.restocks.push({
-    id: 'ADJ-' + Date.now(),
-    date: today(),
-    ts: Date.now(),
-    items: [{ pid: p.id, name: p.name, qty: diff, cost: k.cost(p) }],
-    note: 'ปรับสต็อกด้วยตนเองจากหน้าคลังสินค้า'
-  });
-
-  saveData();
-  render();
-  toast(`ปรับสต็อกสินค้า ${p.name} เป็น ${newStock} ${p.unit} เรียบร้อยแล้ว`);
-}
-
 function fRestock(id) {
   const p = P(id), k = calc(), pn = esc(p.pack_name || 'แพ็ค');
   const hh = D.restocks.filter(r => r.pid === id).sort((a, b) => b.ts - a.ts).slice(0, 8).map(r =>
