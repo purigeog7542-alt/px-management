@@ -629,9 +629,9 @@ function stmt(id) {
 }
 
 const sumS = arr => arr.reduce((a, s) => {
-  const rev = +s.total || +s.amount || +s.total_amount || 0;
-  const cost = +s.cost || (s.items || []).reduce((ci, i) => ci + (i.qty * (i.cost || 0)), 0);
-  return { rev: a.rev + rev, cost: a.cost + cost };
+  a.rev += Number(s.total) || 0;
+  a.cost += Number(s.cost) || 0;
+  return a;
 }, { rev: 0, cost: 0 });
 
 let repViewMode = 'daily'; // มุมมองเริ่มต้น (daily, weekly, monthly, quarterly)
