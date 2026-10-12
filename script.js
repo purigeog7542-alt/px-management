@@ -871,7 +871,15 @@ function exportToXLSX(filename, sheetName, headers, dataRows) {
 }
 
 }
+// --- ฟังก์ชันเปิดหน้าต่างรับสินค้าเพิ่ม (Restock) ---
+function openRestockModal(productId) {
+  fRestock(productId);
+}
 
+// --- ฟังก์ชันเปิดหน้าต่างแก้ไขสินค้า (Edit Product) หรือเพิ่มสินค้าใหม่ ---
+function openProdModal(productId) {
+  fProd(productId);
+}
 // เริ่มต้นโหลดข้อมูลและเปิด Realtime
 loadDataFromSupabase();
 initRealtime();
