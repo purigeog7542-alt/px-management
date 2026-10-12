@@ -4,6 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ร้านสวัสดิการทหารม้า - ระบบขายและสต็อก</title>
+  <title>ร้านสวัสดิการทหารม้า - ระบบขายและสต็อก</title>
+
+<!-- ตั้งชื่อแอปสั้นๆ สำหรับแสดงใต้ไอคอนบนหน้าจอหลัก (Home Screen) -->
+<meta name="apple-mobile-web-app-title" content="ร้านสวัสดิการ">
+<meta name="application-name" content="ร้านสวัสดิการ">
+
+<!-- แท็กระบุไฟล์รูปไอคอน (ใส่รูปภาพ icon.png ไว้ในโฟลเดอร์เดียวกับ index.html) -->
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -15,6 +25,7 @@
   <div class="row" style="flex:none;gap:6px">
     <button class="btn s sm" style="color:#fff;border-color:#fff" onclick="fAudit()">🔍 ตรวจสต็อก</button>
     <button class="btn s sm" style="color:#fff;border-color:#fff" onclick="fSettings()">⚙️ ตั้งค่า</button>
+    
   </div>
 </header>
 <div id="app"><div style="text-align:center;padding:50px">กำลังโหลดข้อมูลจาก Supabase...</div></div>
