@@ -1,1 +1,258 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>แดชบอร์ดรายงาน - ร้านสวัสดิการทหารม้า</title>
+  <!-- โหลด Supabase และ Chart.js จาก CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --primary: #1b4332;
+      --bg: #f4f6f5;
+      --card-bg: #ffffff;
+      --text: #333333;
+      --border: #d8dedb;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 20px;
+    }
+    header {
+      background-color: var(--primary);
+      color: white;
+      padding: 15px 20px;
+      border-radius: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 20px;
+    }
+    .btn {
+      background: white;
+      color: var(--primary);
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      text-decoration: none;
+    }
+    .grid-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: var(--card-bg);
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      border: 1px solid var(--border);
+    }
+    .card .title {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 8px;
+    }
+    .card .value {
+      font-size: 24px;
+      font-weight: bold;
+      color: var(--primary);
+    }
+    .grid-charts {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 20px;
+    }
+    .chart-container {
+      background: var(--card-bg);
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      border: 1px solid var(--border);
+      position: relative;
+      height: 350px;
+    }
+  </style>
+</head>
+<body>
 
+  <header>
+    <h1>📊 แดชบอร์ดวิเคราะห์ยอดขายและสวัสดิการ</h1>
+    <a href="index.html" class="btn">⬅ กลับหน้าขายสินค้า</a>
+  </header>
+
+  <!-- สรุปตัวเลขสำคัญ -->
+  <div class="grid-cards">
+    <div class="card">
+      <div class="title">ยอดขายรวมทั้งหมด</div>
+      <div class="value" id="totalSales">0 ฿</div>
+    </div>
+    <div class="card">
+      <div class="title">กำไรสุทธิรวม</div>
+      <div class="value" id="totalProfit" style="color: #2d6a4f;">0 ฿</div>
+    </div>
+    <div class="card">
+      <div class="title">ทุนสินค้าทั้งหมด</div>
+      <div class="value" id="totalCost">0 ฿</div>
+    </div>
+    <div class="card">
+      <div class="title">จำนวนบิลขายทั้งหมด</div>
+      <div class="value" id="totalBills">0 บิล</div>
+    </div>
+  </div>
+
+  <!-- ส่วนแสดงกราฟ -->
+  <div class="grid-charts">
+    <div class="chart-container">
+      <h3>ยอดขายรายวัน (กราฟแท่งแนวตั้ง)</h3>
+      <canvas id="barChart"></canvas>
+    </div>
+    <div class="chart-container">
+      <h3>สัดส่วนยอดขายตามสินค้า (กราฟวงกลม / Pie)</h3>
+      <canvas id="pieChart"></canvas>
+    </div>
+  </div>
+
+  <script>
+    // --- ตั้งค่าการเชื่อมต่อ Supabase (ใช้ค่าเดิมของคุณ) ---
+    const SUPABASE_URL = 'https://wtyvtjvzvgurybtcnnsf.supabase.co'; 
+    const SUPABASE_ANON_KEY = 'sb_publishable_JLPzS9fSB0-mJN9D3Vssiw_ibQEXq4d'; 
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const F = n => (+n||0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
+
+    let barChartInstance = null;
+    let pieChartInstance = null;
+
+    async function loadDashboardData() {
+      try {
+        const [pRes, sRes, iRes] = await Promise.all([
+          sb.from('products').select('*'),
+          sb.from('transactions').select('*'),
+          sb.from('transaction_items').select('*')
+        ]);
+
+        if (pRes.error) throw pRes.error;
+        if (sRes.error) throw sRes.error;
+
+        const products = pRes.data || [];
+        const transactions = sRes.data || [];
+        const items = iRes.data || [];
+
+        let totalSales = 0;
+        let totalCost = 0;
+        
+        // รวบรวมข้อมูลยอดขายรายวันสำหรับกราฟแท่ง
+        const dailySalesMap = {};
+        // รวบรวมข้อมูลยอดขายตามสินค้าสำหรับกราฟพาย
+        const productSalesMap = {};
+
+        transactions.forEach(tx => {
+          totalSales += Number(tx.total) || 0;
+          totalCost += Number(tx.cost) || 0;
+
+          // จัดกลุ่มตามวัน (date)
+          const d = tx.date;
+          if (d) {
+            dailySalesMap[d] = (dailySalesMap[d] || 0) + (Number(tx.total) || 0);
+          }
+        });
+
+        // คำนวณยอดขายแต่ละสินค้า
+        items.forEach(item => {
+          const prodName = item.name || 'อื่นๆ';
+          const subTotal = (Number(item.qty) || 0) * (Number(item.unit_price) || 0);
+          productSalesMap[prodName] = (productSalesMap[prodName] || 0) + subTotal;
+        });
+
+        const totalProfit = totalSales - totalCost;
+
+        // อัปเดตตัวเลขการ์ดสรุป
+        document.getElementById('totalSales').textContent = F(totalSales) + ' ฿';
+        document.getElementById('totalProfit').textContent = F(totalProfit) + ' ฿';
+        document.getElementById('totalCost').textContent = F(totalCost) + ' ฿';
+        document.getElementById('totalBills').textContent = transactions.length + ' บิล';
+
+        // สร้างกราฟ
+        renderBarChart(dailySalesMap);
+        renderPieChart(productSalesMap);
+
+      } catch (err) {
+        console.error('Error loading dashboard data:', err);
+        alert('โหลดข้อมูลแดชบอร์ดไม่สำเร็จ: ' + err.message);
+      }
+    }
+
+    function renderBarChart(dailyMap) {
+      const sortedDates = Object.keys(dailyMap).sort();
+      const dataValues = sortedDates.map(date => dailyMap[date]);
+
+      const ctx = document.getElementById('barChart').getContext('2d');
+      if (barChartInstance) barChartInstance.destroy();
+
+      barChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: sortedDates,
+          datasets: [{
+            label: 'ยอดขาย (บาท)',
+            data: dataValues,
+            backgroundColor: '#2d6a4f',
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    function renderPieChart(prodMap) {
+      // เรียงลำดับสินค้าขายดี และดึงมาแค่ 6 อันดับแรกเพื่อไม่ให้กราฟแน่นเกินไป
+      const sortedProds = Object.entries(prodMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
+      const labels = sortedProds.map(item => item[0]);
+      const data = sortedProds.map(item => item[1]);
+
+      const ctx = document.getElementById('pieChart').getContext('2d');
+      if (pieChartInstance) pieChartInstance.destroy();
+
+      pieChartInstance = new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: data,
+            backgroundColor: ['#1b4332', '#2d6a4f', '#40916c', '#52b788', '#74c69d', '#95d5b2']
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom' }
+          }
+        }
+      });
+    }
+
+    // เริ่มโหลดข้อมูลทันทีเมื่อเปิดหน้า dashboard.html
+    document.addEventListener('DOMContentLoaded', loadDashboardData);
+  </script>
+</body>
+</html>
