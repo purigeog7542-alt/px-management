@@ -102,7 +102,7 @@ function initRealtime() {
     .subscribe();
 }
 
-function calc() {
+ffunction calc() {
   const sold = {}, bal = {}, dynamicCost = {}, dynamicStock = {}, lastCost = {};
   
   D.sales.forEach(s => (s.items || []).forEach(i => sold[i.pid] = (sold[i.pid] || 0) + i.qty));
@@ -111,15 +111,21 @@ function calc() {
   D.sales.forEach(s => { if (s.method === 'sign' && s.cust in bal) bal[s.cust] += s.total; });
   D.payments.forEach(y => { if (y.cust in bal) bal[y.cust] -= y.amount; });
 
-  // บันทึกต้นทุนล่าสุดจากประวัติการรับของ (Restocks)
   D.products.forEach(p => {
     const productRestocks = D.restocks.filter(r => r.pid === p.id).sort((a,b) => b.ts - a.ts);
+    
+    // กำหนดต้นทุนตั้งต้นจากข้อมูลสินค้า หรือถ้าไม่มีให้ใช้ 70% ของราคาขายกันตกเป็น 0
+    let baseCost = 0;
     if (productRestocks.length > 0) {
       const latest = productRestocks[0];
-      lastCost[p.id] = latest.units > 0 ? (latest.cost / latest.units) : 0;
+      baseCost = latest.units > 0 ? (latest.cost / latest.units) : 0;
+    } else if (Number(p.buy_qty) > 0) {
+      baseCost = Number(p.buy_cost) / Number(p.buy_qty);
     } else {
-      lastCost[p.id] = p.buy_qty > 0 ? (p.buy_cost / p.buy_qty) : 0;
+      baseCost = Number(p.price) ? Number(p.price) * 0.7 : 10; // ค่าสำรองฉุกเฉินกันเป็น 0
     }
+
+    lastCost[p.id] = baseCost;
 
     let totalQty = Number(p.buy_qty) || 0;
     let totalCost = Number(p.buy_cost) || 0;
@@ -129,11 +135,11 @@ function calc() {
     });
 
     dynamicStock[p.id] = totalQty - (Number(p.hist) || 0) - (sold[p.id] || 0);
-    dynamicCost[p.id] = totalQty > 0 ? (totalCost / totalQty) : lastCost[p.id];
+    dynamicCost[p.id] = totalQty > 0 ? (totalCost / totalQty) : baseCost;
   });
 
-  const stock = p => dynamicStock[p.id] ?? (p.buy_qty - (p.hist || 0) - (sold[p.id] || 0));
-  const cost = p => dynamicCost[p.id] ?? lastCost[p.id] ?? (p.buy_qty ? p.buy_cost / p.buy_qty : 0);
+  const stock = p => dynamicStock[p.id] ?? (Number(p.buy_qty) - (Number(p.hist) || 0) - (sold[p.id] || 0));
+  const cost = p => dynamicCost[p.id] ?? lastCost[p.id] ?? 10;
   
   return { sold, bal, stock, cost };
 }
