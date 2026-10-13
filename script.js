@@ -103,13 +103,35 @@ function initRealtime() {
 }
 
 function calc() {
-  const sold = {}, bal = {};
+  const sold = {}, bal = {}, dynamicCost = {}, dynamicStock = {};
+  
+  // 1. คำนวณยอดขายออกไปแยกตามสินค้า
   D.sales.forEach(s => (s.items || []).forEach(i => sold[i.pid] = (sold[i.pid] || 0) + i.qty));
+  
+  // 2. คำนวณยอดหนี้สมาชิก
   D.customers.forEach(c => bal[c.id] = +c.opening || 0);
   D.sales.forEach(s => { if (s.method === 'sign' && s.cust in bal) bal[s.cust] += s.total; });
   D.payments.forEach(y => { if (y.cust in bal) bal[y.cust] -= y.amount; });
-  const stock = p => p.buy_qty - (p.hist || 0) - (sold[p.id] || 0);
-  const cost = p => p.buy_qty ? p.buy_cost / p.buy_qty : 0;
+
+  // 3. คำนวณต้นทุนถัวเฉลี่ยถ่วงน้ำหนัก (Weighted Average) จากยอดตั้งต้น + ประวัติการรับของทั้งหมด
+  D.products.forEach(p => {
+    let totalQty = Number(p.buy_qty) || 0;
+    let totalCost = Number(p.buy_cost) || 0;
+
+    // ค้นหาประวัติการรับของทั้งหมดของสินค้านี้จากตาราง restocks แล้วนำมาบวกสะสม
+    const productRestocks = D.restocks.filter(r => r.pid === p.id);
+    productRestocks.forEach(r => {
+      totalQty += Number(r.units) || 0;
+      totalCost += Number(r.cost) || 0;
+    });
+
+    dynamicStock[p.id] = totalQty - (Number(p.hist) || 0) - (sold[p.id] || 0);
+    dynamicCost[p.id] = totalQty > 0 ? (totalCost / totalQty) : 0;
+  });
+
+  const stock = p => dynamicStock[p.id] ?? (p.buy_qty - (p.hist || 0) - (sold[p.id] || 0));
+  const cost = p => dynamicCost[p.id] ?? (p.buy_qty ? p.buy_cost / p.buy_qty : 0);
+  
   return { sold, bal, stock, cost };
 }
 
