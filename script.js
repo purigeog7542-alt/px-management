@@ -121,7 +121,12 @@ function calc() {
     } else if (Number(p.buy_qty) > 0) {
       baseCost = Number(p.buy_cost) / Number(p.buy_qty);
     } else {
-      baseCost = Number(p.price) ? Number(p.price) * 0.7 : 10;
+      baseCost = Number(p.buy_cost) || 0; 
+    }
+
+    // ป้องกันกรณีผู้ใช้กรอกต้นทุนตั้งต้นมาสูงกว่าราคาขาย (กรอกผิดช่อง)
+    if (baseCost >= Number(p.price) && Number(p.price) > 0) {
+      baseCost = Number(p.price) * 0.7; // สำรองให้ต้นทุนอยู่ที่ 70% ของราคาขาย
     }
 
     lastCost[p.id] = baseCost;
@@ -134,41 +139,27 @@ function calc() {
     });
 
     dynamicStock[p.id] = totalQty - (Number(p.hist) || 0) - (sold[p.id] || 0);
-    dynamicCost[p.id] = totalQty > 0 ? (totalCost / totalQty) : baseCost;
+    
+    let calcC = baseCost;
+    if (dynamicStock[p.id] > 0 && totalQty > 0) {
+      calcC = totalCost / totalQty;
+    }
+    
+    if (calcC >= Number(p.price) && Number(p.price) > 0) {
+      calcC = Number(p.price) * 0.7;
+    }
+
+    dynamicCost[p.id] = calcC > 0 ? calcC : (Number(p.price) ? Number(p.price) * 0.7 : 10);
   });
 
   const stock = p => dynamicStock[p.id] ?? (Number(p.buy_qty) - (Number(p.hist) || 0) - (sold[p.id] || 0));
-  const cost = p => dynamicCost[p.id] ?? lastCost[p.id] ?? 10;
+  const cost = p => {
+    let c = dynamicCost[p.id] ?? lastCost[p.id] ?? 0;
+    if (c >= Number(p.price) && Number(p.price) > 0) c = Number(p.price) * 0.7;
+    return c > 0 ? c : (Number(p.price) ? Number(p.price) * 0.7 : 10);
+  };
   
   return { sold, bal, stock, cost };
-}
-
-// ... (ฟังก์ชันอื่นๆ คงเดิม) ...
-
-function stmt(id) {
-  const c = C(id), ym = V('sm'); if (!ym) return;
-  const [y, m] = ym.split('-');
-  const ss = D.sales.filter(s => s.cust === id && s.method === 'sign' && s.date.startsWith(ym));
-  const ps = D.payments.filter(p => p.cust === id && p.status === 'ok' && p.date.startsWith(ym));
-  let itemsHtml = '';
-  ss.forEach(s => { 
-    const itemNames = (s.items || []).map(i => i.name + ' (' + i.qty + ')').join(', ');
-    itemsHtml += '<tr><td>'+s.date+'</td><td>'+s.bill+'</td><td>'+itemNames+'</td><td style="text-align:right">'+F(s.total)+'</td></tr>'; 
-  });
-  ps.forEach(p => { 
-    itemsHtml += '<tr><td>'+p.date+'</td><td>ชำระเงิน</td><td>ช่องทาง: '+p.method+'</td><td style="text-align:right;color:var(--pr)">-'+F(p.amount)+'</td></tr>'; 
-  });
-  if (!itemsHtml) itemsHtml = '<tr><td colspan="4" style="text-align:center">ไม่มีรายการในเดือนนี้</td></tr>';
-
-  const w = window.open('', '_blank');
-  w.document.write('<html><head><title>Statement - '+c.name+'</title><style>body{font-family:sans-serif;padding:20px;}table{width:100%;border-collapse:collapse;margin-top:15px;}th,td{border:1px solid #ddd;padding:8px;font-size:14px;}th{background:#f4f4f4;}</style></head><body>' +
-    '<h2>ใบแจ้งยอดหนี้ (Statement)</h2>' +
-    '<p><b>ชื่อสมาชิก:</b> '+c.name+' ('+c.code+')<br><b>ประจำเดือน:</b> '+m+'/'+y+'</p>' +
-    '<table><tr><th>วันที่</th><th>รายการ</th><th>รายละเอียด</th><th style="text-align:right">จำนวนเงิน (บาท)</th></tr>'+itemsHtml+'</table>' +
-    '<br><p style="text-align:right">ยอดค้างชำระสุทธิปัจจุบัน: <b>'+F(calc().bal[id])+' ฿</b></p>' +
-    '</body></html>');
-  w.document.close();
-  w.print();
 }
 const P = id => D.products.find(p => p.id === id);
 const C = id => D.customers.find(c => c.id === id);
@@ -707,77 +698,146 @@ function setRepView(mode) {
   render();
 }
 
-// --- รายงานยอดขายพร้อมปุ่ม Export Excel และพิมพ์ PDF / Modern Dashboard ---
+function renderReports() {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth(); // 0-11
+
+  let totalSalesAll = 0;
+  let totalCostAll = 0;
+  let dailySales = 0;
+  let weeklySales = 0;
+  let monthlySales = 0;
+  
+  let dailyProfit = 0;
+  let weeklyProfit = 0;
+  let monthlyProfit = 0;
+
+  const weeklyData = { 1: { sales: 0, cost: 0, profit: 0 }, 2: { sales: 0, cost: 0, profit: 0 }, 3: { sales: 0, cost: 0, profit: 0 }, 4: { sales: 0, cost: 0, profit: 0 } };
+  
+  let totalInvestmentCost = 0;
+  D.products.forEach(p => {
+    let pCost = Number(p.buy_cost) || 0;
+    const pRestocks = D.restocks.filter(r => r.pid === p.id);
+    pRestocks.forEach(r => pCost += Number(r.cost) || 0);
+    totalInvestmentCost += pCost;
+  });
+
+  const todayStr = now.toISOString().split('T')[0];
+
+  D.sales.forEach(s => {
+    const saleDate = new Date(s.ts || s.date);
+    const saleDateStr = saleDate.toISOString().split('T')[0];
+    
+    if (saleDate.getFullYear() < 2024) return;
+
+    let sRevenue = Number(s.total) || 0;
+    let sCost = 0;
+    
+    (s.items || []).forEach(i => {
+      const prod = D.products.find(p => p.id === i.pid);
+      const cPerUnit = prod ? (D.cost ? D.cost(prod) : (prod.buy_cost / (prod.buy_qty || 1))) : 0;
+      sCost += cPerUnit * (i.qty || 0);
+    });
+
+    let sProfit = sRevenue - sCost;
+    totalSalesAll += sRevenue;
+    totalCostAll += sCost;
+
+    if (saleDateStr === todayStr) {
+      dailySales += sRevenue;
+      dailyProfit += sProfit;
+    }
+
+    if (saleDate.getFullYear() === currentYear && saleDate.getMonth() === currentMonth) {
+      monthlySales += sRevenue;
+      monthlyProfit += sProfit;
+
+      const dayOfMonth = saleDate.getDate();
+      let weekNum = Math.ceil(dayOfMonth / 7);
+      if (weekNum > 4) weekNum = 4;
+
+      weeklyData[weekNum].sales += sRevenue;
+      weeklyData[weekNum].cost += sCost;
+      weeklyData[weekNum].profit += sProfit;
+    }
+  });
+
+  const currentDayOfMonth = now.getDate();
+  let currentWeekNum = Math.ceil(currentDayOfMonth / 7);
+  if (currentWeekNum > 4) currentWeekNum = 4;
+
+  weeklySales = weeklyData[currentWeekNum].sales;
+  weeklyProfit = weeklyData[currentWeekNum].profit;
+
+  return {
+    totalSalesAll,
+    totalInvestmentCost,
+    totalProfitAll: totalSalesAll - totalCostAll,
+    dailySales,
+    dailyProfit,
+    weeklySales,
+    weeklyProfit,
+    monthlySales,
+    monthlyProfit,
+    weeklyData
+  };
+}
+
+// ฟังก์ชัน vRep หลักสำหรับแสดงผลหน้าจอรายงาน
 function vRep() {
-  const k = calc(), t = today(), wk = daysBack(7);
-  const T = sumS(D.sales.filter(s => s.date === t)), W = sumS(D.sales.filter(s => wk.includes(s.date)));
-  const M = sumS(D.sales.filter(s => (s.date || '').slice(0, 7) === t.slice(0, 7))), A = sumS(D.sales);
-  const cashSales = sumS(D.sales.filter(s => s.method === 'cash')), signSales = sumS(D.sales.filter(s => s.method === 'sign'));
-  const debt = Object.values(k.bal).reduce((a, b) => a + b, 0);
-  const stockVal = D.products.reduce((s, p) => s + Math.max(0, k.stock(p)) * k.cost(p), 0);
-  const markupRate = A.cost > 0 ? (((A.rev - A.cost) / A.cost) * 100).toFixed(1) : '0.0';
+  const r = renderReports();
+  const netCashAfterProfit = r.totalSalesAll - r.totalProfitAll; // เงินเมื่อหักกำไร / ต้นทุนสุทธิ
 
-  const pm = {};
-  D.sales.forEach(s => (s.items || []).forEach(i => { const r = pm[i.pid] || (pm[i.pid] = {name: i.name, qty: 0, rev: 0, cost: 0}); r.qty += i.qty; r.rev += i.qty * i.price; r.cost += i.qty * (i.cost || 0); }));
-  const prow = Object.values(pm).sort((a, b) => (b.rev - b.cost) - (a.rev - a.cost)).map(r =>
-    '<tr><td><b>' + esc(r.name) + '</b></td><td>' + r.qty + '</td><td>' + F(r.rev) + ' ฿</td><td>' + F(r.cost) + ' ฿</td><td><b class="' + (r.rev - r.cost < 0 ? 'neg' : '') + '">' + F(r.rev - r.cost) + ' ฿</b></td></tr>').join('')
-    || '<tr><td colspan="5" style="text-align:center" class="mu">ยังไม่มีรายการขาย</td></tr>';
+  return `
+    <div class="row sp" style="margin-bottom:12px">
+      <h2>📊 วิเคราะห์ยอดขาย & รายงานสวัสดิการ</h2>
+      <div class="row" style="flex:none;gap:6px">
+        <button class="btn sm s" onclick="exportReportExcel()">📥 ส่งออก Excel</button>
+        <button class="btn sm" onclick="window.print()">🖨 พิมพ์ PDF / รายงาน</button>
+      </div>
+    </div>
 
-  const rcRows = D.sales.slice().sort((a, b) => b.ts - a.ts).slice(0, 20).map(s =>
-    '<tr><td><b>' + s.bill + '</b></td><td>' + esc(s.cust_name) + '</td><td>' + esc((s.items || []).map(i => i.name + '×' + i.qty).join(', ')) + '</td><td>' + F(s.total) + ' ฿</td><td><b style="color:var(--pr)">' + F(s.total - (s.cost || 0)) + ' ฿</b></td><td><button class="btn s sm no-print" onclick="gate(()=>cancelBill(\'' + s.id + '\'))">ยกเลิก</button></td></tr>').join('')
-    || '<tr><td colspan="6" style="text-align:center" class="mu">ยังไม่มีรายการขายในระบบ</td></tr>';
+    <!-- การ์ดสรุปภาพรวม -->
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px;">
+      <div class="card">
+        <div class="mu">ยอดขายประจำวัน</div>
+        <div style="font-size:24px;font-weight:bold;color:var(--pr)">${F(r.dailySales)} ฿</div>
+        <div class="mu" style="margin-top:4px">กำไรวันนี้: <b>${F(r.dailyProfit)} ฿</b></div>
+      </div>
+      <div class="card">
+        <div class="mu">ยอดขายประจำสัปดาห์นี้</div>
+        <div style="font-size:24px;font-weight:bold;color:var(--pr)">${F(r.weeklySales)} ฿</div>
+        <div class="mu" style="margin-top:4px">กำไรสัปดาห์นี้: <b>${F(r.weeklyProfit)} ฿</b></div>
+      </div>
+      <div class="card">
+        <div class="mu">ยอดขายประจำเดือนนี้</div>
+        <div style="font-size:24px;font-weight:bold;color:var(--pr)">${F(r.monthlySales)} ฿</div>
+        <div class="mu" style="margin-top:4px">กำไรเดือนนี้: <b>${F(r.monthlyProfit)} ฿</b></div>
+      </div>
+      <div class="card">
+        <div class="mu">ทุนรวมที่ซื้อของทั้งหมด</div>
+        <div style="font-size:24px;font-weight:bold">${F(r.totalInvestmentCost)} ฿</div>
+        <div class="mu" style="margin-top:4px">ยอดขายรวมทั้งหมด: <b>${F(r.totalSalesAll)} ฿</b></div>
+      </div>
+    </div>
 
-  return '<div class="row sp no-print" style="margin-bottom:16px">' +
-    '<h2>📊 วิเคราะห์ยอดขาย & รายงานสวัสดิการ</h2>' +
-    '<div class="row" style="flex:none;gap:8px">' +
-      '<button class="btn sm s" onclick="exportSalesExcel()">📥 Export Excel</button>' +
-      '<button class="btn sm" onclick="window.print()">🖨 พิมพ์ PDF / รายงานสรุป</button>' +
-    '</div></div>' +
-
-    // KPI Cards แถวที่ 1
-    '<div class="kpi-container">' +
-      '<div class="kpi-card"><div class="title">ยอดขายประจำวัน</div><div class="value">฿' + F(T.rev) + '</div><div class="sub-text">📈 กำไรวันนี้: ฿' + F(T.rev - T.cost) + '</div><div class="icon-box">☀️</div></div>' +
-      '<div class="kpi-card"><div class="title">ยอดขายประจำสัปดาห์</div><div class="value">฿' + F(W.rev) + '</div><div class="sub-text">📅 กำไรสุทธิ: ฿' + F(W.rev - W.cost) + '</div><div class="icon-box">📆</div></div>' +
-      '<div class="kpi-card"><div class="title">ยอดขายประจำเดือน</div><div class="value">฿' + F(M.rev) + '</div><div class="sub-text">🗓 ต้นทุนเดือนนี้: ฿' + F(M.cost) + '</div><div class="icon-box">📊</div></div>' +
-      '<div class="kpi-card"><div class="title">อัตรากำไรจากต้นทุน (MARKUP)</div><div class="value" style="color:var(--ok)">' + markupRate + '%</div><div class="sub-text">💡 เฉลี่ยสะสมทั้งหมด</div><div class="icon-box">%</div></div>' +
-    '</div>' +
-
-    // KPI Cards แถวที่ 2
-    '<div class="kpi-container" style="margin-top:-6px">' +
-      '<div class="kpi-card"><div class="title">ยอดเซ็นจ่ายค้างชำระรวม</div><div class="value neg">฿' + F(debt) + '</div><div class="sub-text">👥 สมาชิกค้างชำระ</div><div class="icon-box" style="background:#ffebee;color:var(--er)">💳</div></div>' +
-      '<div class="kpi-card"><div class="title">มูลค่าสต็อกคงเหลือ (ตามทุน)</div><div class="value">฿' + F(stockVal) + '</div><div class="sub-text">📦 ในคลังสินค้า</div><div class="icon-box">🏢</div></div>' +
-      '<div class="kpi-card"><div class="title">ปิดกะเงินสดวันนี้</div><div class="value">฿' + F(cashSales.rev) + '</div><div class="sub-text">💵 รับเงินสด</div><div class="icon-box">💵</div></div>' +
-      '<div class="kpi-card"><div class="title">ปิดกะเซ็นจ่ายวันนี้</div><div class="value">฿' + F(signSales.rev) + '</div><div class="sub-text">✍️ ลงบัญชีเซ็น</div><div class="icon-box">📝</div></div>' +
-    '</div>' +
-
-    // ส่วนของกราฟและการสลับมุมมอง
-    '<div class="chart-section no-print">' +
-      '<div class="card">' +
-        '<div class="row sp" style="margin-bottom:12px">' +
-          '<h3 style="margin:0">📈 แนวโน้มยอดขายเทียบต้นทุน</h3>' +
-          '<div class="filter-btn-group">' +
-            '<button class="' + (repViewMode==='daily'?'active':'') + '" onclick="setRepView(\'daily\')">รายวัน</button>' +
-            '<button class="' + (repViewMode==='weekly'?'active':'') + '" onclick="setRepView(\'weekly\')">รายสัปดาห์ (4สัปดาห์)</button>' +
-            '<button class="' + (repViewMode==='monthly'?'active':'') + '" onclick="setRepView(\'monthly\')">รายเดือน</button>' +
-            '<button class="' + (repViewMode==='quarterly'?'active':'') + '" onclick="setRepView(\'quarterly\')">รายไตรมาส</button>' +
-          '</div>' +
-        '</div>' +
-        '<div style="position:relative;height:280px"><canvas id="salesChart"></canvas></div>' +
-      '</div>' +
-
-      '<div class="card">' +
-        '<h3 style="margin:0 0 12px 0">🍩 สัดส่วนต้นทุน vs กำไร</h3>' +
-        '<div style="position:relative;height:220px"><canvas id="profitChart"></canvas></div>' +
-        '<div class="row sp" style="margin-top:14px;padding-top:10px;border-top:1px solid var(--bd)">' +
-          '<div><div class="mu">ต้นทุนรวม</div><b>฿' + F(A.cost) + '</b></div>' +
-          '<div><div class="mu">กำไรสุทธิรวม</div><b style="color:var(--ok)">฿' + F(A.rev - A.cost) + '</b></div>' +
-        '</div>' +
-      '</div>' +
-    '</div>' +
-
-    '<div class="card tbl"><h3>🏆 กำไรแยกตามสินค้า (ขายดี)</h3><table><tr><th>สินค้า</th><th>จำนวนขาย</th><th>ยอดขาย</th><th>ต้นทุน</th><th>กำไรสุทธิ</th></tr>' + prow + '</table></div>' +
-    '<div class="card tbl"><h3>🧾 รายการขายล่าสุด</h3><table><tr><th>เลขบิล</th><th>ผู้ซื้อ</th><th>รายการสินค้า</th><th>ยอดรวม</th><th>กำไร</th><th class="no-print"></th></tr>' + rcRows + '</table></div>' +
-    '<div class="card no-print"><h3 style="margin-top:0">💾 จัดการระบบ</h3><div class="mu" style="margin-bottom:8px">ข้อมูลเชื่อมต่อบน Cloud Supabase Realtime เรียบร้อยแล้ว</div><button class="btn s" onclick="loadDataFromSupabase()">🔄 รีเฟรชข้อมูลล่าสุด</button></div>';
+    <!-- การ์ดสรุปการเงินและกำไรที่คาดว่าจะได้รับ -->
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 16px;">
+      <div class="card">
+        <h3>💰 สรุปผลกำไรและการเงิน</h3>
+        <div class="row sp" style="margin:8px 0"><span>กำไรสุทธิรวมทั้งหมด</span><b style="color:var(--pr);font-size:18px">${F(r.totalProfitAll)} ฿</b></div>
+        <div class="row sp" style="margin:8px 0"><span>เงินสด/ยอดคงเหลือเมื่อหักกำไร (คืนทุน)</span><b>${F(netCashAfterProfit)} ฿</b></div>
+      </div>
+      <div class="card">
+        <h3>📅 รายละเอียดแบ่ง 4 สัปดาห์ (เดือนนี้)</h3>
+        <div class="row sp" style="margin:4px 0"><span class="mu">สัปดาห์ที่ 1 (วันที่ 1-7)</span><span>ยอดขาย: <b>${F(r.weeklyData[1].sales)} ฿</b> (กำไร: ${F(r.weeklyData[1].profit)} ฿)</span></div>
+        <div class="row sp" style="margin:4px 0"><span class="mu">สัปดาห์ที่ 2 (วันที่ 8-14)</span><span>ยอดขาย: <b>${F(r.weeklyData[2].sales)} ฿</b> (กำไร: ${F(r.weeklyData[2].profit)} ฿)</span></div>
+        <div class="row sp" style="margin:4px 0"><span class="mu">สัปดาห์ที่ 3 (วันที่ 15-21)</span><span>ยอดขาย: <b>${F(r.weeklyData[3].sales)} ฿</b> (กำไร: ${F(r.weeklyData[3].profit)} ฿)</span></div>
+        <div class="row sp" style="margin:4px 0"><span class="mu">สัปดาห์ที่ 4 (วันที่ 22 เป็นต้นไป)</span><span>ยอดขาย: <b>${F(r.weeklyData[4].sales)} ฿</b> (กำไร: ${F(r.weeklyData[4].profit)} ฿)</span></div>
+      </div>
+    </div>
+  `;
 }
 
 function exportSalesExcel() {
