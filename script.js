@@ -27,6 +27,7 @@ const today = () => ds(new Date());
 
 function toast(t) {
   const e = document.getElementById('toast');
+  if (!e) return;
   e.textContent = t; e.style.display = 'block';
   setTimeout(() => e.style.display = 'none', 2600);
 }
@@ -124,9 +125,8 @@ function calc() {
       baseCost = Number(p.buy_cost) || 0; 
     }
 
-    // ป้องกันกรณีผู้ใช้กรอกต้นทุนตั้งต้นมาสูงกว่าราคาขาย (กรอกผิดช่อง)
     if (baseCost >= Number(p.price) && Number(p.price) > 0) {
-      baseCost = Number(p.price) * 0.7; // สำรองให้ต้นทุนอยู่ที่ 70% ของราคาขาย
+      baseCost = Number(p.price) * 0.7; 
     }
 
     lastCost[p.id] = baseCost;
@@ -161,6 +161,7 @@ function calc() {
   
   return { sold, bal, stock, cost };
 }
+
 const P = id => D.products.find(p => p.id === id);
 const C = id => D.customers.find(c => c.id === id);
 const nextCode = (arr, pre, w) => pre + pad(Math.max(0, ...arr.map(x => parseInt((x.code||'').slice(pre.length))||0)) + 1, w);
@@ -170,11 +171,14 @@ function goTab(k) { tab = k; render(); }
 function srch(val) { q = val; }
 
 function render() {
-  let navHtml = '';
-  [['sell','🛒','ขายสินค้า'],['stock','📦','คลังสินค้า'],['cus','👥','สมาชิก ('+D.customers.length+')'],['rep','📊','รายงาน']].forEach(([k,i,t]) => {
-    navHtml += '<button class="'+(tab===k?'a':'')+'" onclick="goTab(\''+k+'\')">'+i+'<br>'+t+'</button>';
-  });
-  document.getElementById('nav').innerHTML = navHtml;
+  const navEl = document.getElementById('nav');
+  if (navEl) {
+    let navHtml = '';
+    [['sell','🛒','ขายสินค้า'],['stock','📦','คลังสินค้า'],['cus','👥','สมาชิก ('+D.customers.length+')'],['rep','📊','รายงาน']].forEach(([k,i,t]) => {
+      navHtml += '<button class="'+(tab===k?'a':'')+'" onclick="goTab(\''+k+'\')">'+i+'<br>'+t+'</button>';
+    });
+    navEl.innerHTML = navHtml;
+  }
   
   const k = calc();
   let content = '';
@@ -182,7 +186,9 @@ function render() {
   else if (tab === 'stock') content = vStock(k);
   else if (tab === 'cus') content = vCus(k);
   else if (tab === 'rep') content = vRep();
-  document.getElementById('app').innerHTML = content;
+  
+  const appEl = document.getElementById('app');
+  if (appEl) appEl.innerHTML = content;
   if (tab === 'rep') initCharts();
 }
 
@@ -288,7 +294,8 @@ async function checkout() {
     toast('บันทึกการขายไม่สำเร็จ: ' + err.message);
   }
 }
-// --- หน้าแสดงผลคลังสินค้า (vStock) ฉบับสมบูรณ์มีปุ่มปรับสต็อก ---
+
+// --- หน้าแสดงผลคลังสินค้า (vStock) ---
 function vStock() {
   const k = calc();
   const rows = D.products.slice().sort((a,b)=>a.code>b.code?1:-1).map(p => {
@@ -301,8 +308,8 @@ function vStock() {
       '<td><span class="badge ' + (s[1] === 'ok' ? 'ok' : 'er') + '">' + s[0] + '</span></td>' +
       '<td><div class="row" style="gap:4px">' +
         '<button class="btn s sm" onclick="adjustStockManual(\'' + p.id + '\')">ปรับสต็อก</button>' +
-        '<button class="btn s sm" onclick="gate(()=>openRestockModal(\'' + p.id + '\'))">รับของ</button>' +
-        '<button class="btn sm" onclick="gate(()=>openProdModal(\'' + p.id + '\'))">แก้</button>' +
+        '<button class="btn s sm" onclick="gate(()=>fRestock(\'' + p.id + '\'))">รับของ</button>' +
+        '<button class="btn sm" onclick="gate(()=>fProd(\'' + p.id + '\'))">แก้</button>' +
       '</div></td></tr>';
   }).join('') || '<tr><td colspan="7" style="text-align:center" class="mu">ยังไม่มีสินค้าในระบบ</td></tr>';
 
@@ -311,10 +318,11 @@ function vStock() {
     '<div class="row" style="flex:none;gap:6px">' +
       '<button class="btn sm s" onclick="exportStockExcel()">📥 Excel</button>' +
       '<button class="btn sm" onclick="window.print()">🖨 พิมพ์ PDF / รายงาน</button>' +
-      '<button class="btn sm p" onclick="gate(()=>openProdModal())">+ เพิ่มสินค้า</button>' +
+      '<button class="btn sm p" onclick="gate(()=>fProd())">+ เพิ่มสินค้า</button>' +
     '</div></div>' +
     '<div class="card tbl"><table><tr><th>สินค้า</th><th>คงเหลือ</th><th>ราคาขาย</th><th>ทุน/หน่วย</th><th>กำไร/หน่วย</th><th>สถานะ</th><th>จัดการ</th></tr>' + rows + '</table></div>';
 }
+
 function exportStockExcel() {
   const k = calc();
   let rows = [['รหัสสินค้า', 'ชื่อสินค้า', 'คงเหลือ', 'หน่วย', 'ราคาขาย (บาท)', 'ทุน/หน่วย (บาท)', 'กำไร/หน่วย (บาท)', 'สถานะ']];
@@ -327,17 +335,24 @@ function exportStockExcel() {
 }
 
 function modal(h, save) {
-  document.getElementById('mb').innerHTML = h + '<div class="row" style="margin-top:14px"><button class="btn s" onclick="closeM()">ปิด</button>'+(save?'<button class="btn" id="sv">บันทึก</button>':'')+'</div>';
-  document.getElementById('mo').style.display = 'flex';
+  const mb = document.getElementById('mb');
+  const mo = document.getElementById('mo');
+  if (!mb || !mo) return;
+  mb.innerHTML = h + '<div class="row" style="margin-top:14px"><button class="btn s" onclick="closeM()">ปิด</button>'+(save?'<button class="btn" id="sv">บันทึก</button>':'')+'</div>';
+  mo.style.display = 'flex';
   if (save) document.getElementById('sv').onclick = async () => { try { await save(); closeM(); } catch(e) { toast('ไม่สำเร็จ: '+e.message); } };
 }
-const closeM = () => document.getElementById('mo').style.display = 'none';
-const V = id => document.getElementById(id).value;
+
+const closeM = () => {
+  const mo = document.getElementById('mo');
+  if (mo) mo.style.display = 'none';
+};
+const V = id => document.getElementById(id) ? document.getElementById(id).value : '';
 
 function pv(fromMk) {
   const g = id => document.getElementById(id), n = id => g(id) ? (+g(id).value || 0) : 0;
   const c = g('cs') ? n('cs') : (n('pe') > 0 ? n('pc') / n('pe') : 0);
-  if (fromMk && n('mk') > 0 && c > 0) g('pr').value = Math.ceil(c * (1 + n('mk') / 100));
+  if (fromMk && n('mk') > 0 && c > 0 && g('pr')) g('pr').value = Math.ceil(c * (1 + n('mk') / 100));
   const box = g('pvb'); if (!box) return;
   const pr = n('pr'), pf = pr - c, cl = pf < 0 ? 'neg' : '';
   let h = '<div class="row sp"><span>ต้นทุน/หน่วย</span><b>' + F(c) + ' ฿</b></div>' +
@@ -421,15 +436,15 @@ async function delProd(id) {
   if (error) return toast('ลบไม่สำเร็จ: ' + error.message);
   closeM(); loadDataFromSupabase(); toast('ลบสินค้าแล้ว');
 }
-// --- ฟังก์ชันแก้ไขยอดสินค้าคงเหลือด้วยตนเอง (อัปเดต buy_qty โดยตรง) ---
+
 async function adjustStockManual(pid) {
   const p = D.products.find(x => x.id === pid);
   if (!p) return;
   const k = calc();
   const currentStock = k.stock(p);
 
-  const newStockStr = prompt(`ปรับแก้สต็อกสินค้า: [${p.code}] ${p.name}\nจำนวนคงเหลือปัจจุบัน: ${currentStock} ${p.unit}\n\nกรุณากรอกจำนวนสต็อกคงเหลือที่ถูกต้อง (จำนวนจริง):`, currentStock);
-  if (newStockStr === null) return; // กด Cancel
+  const newStockStr = prompt(`ปรับแก้สต็อกสินค้า: [${p.code}] ${p.name}\nจำนวนคงเหลือปัจจุบัน: ${currentStock} ${p.unit}\n\nกรุณากรอกจำนวนสต็อกคงเหลือที่ถูกต้อง:`, currentStock);
+  if (newStockStr === null) return;
 
   const newStock = parseInt(newStockStr);
   if (isNaN(newStock)) {
@@ -443,7 +458,6 @@ async function adjustStockManual(pid) {
     return;
   }
 
-  // คำนวณยอดซื้อตั้งต้นใหม่ เพื่อให้สต็อกคงเหลือเท่ากับจำนวนที่กรอกจริง
   const soldQty = k.sold[pid] || 0;
   const histQty = p.hist || 0;
   const newBuyQty = newStock + soldQty + histQty;
@@ -453,11 +467,12 @@ async function adjustStockManual(pid) {
     if (error) throw error;
 
     toast(`ปรับสต็อกสินค้า ${p.name} เป็น ${newStock} ${p.unit} เรียบร้อยแล้ว`);
-    loadDataFromSupabase(); // โหลดข้อมูลใหม่มาแสดงผลทันที
+    loadDataFromSupabase();
   } catch (err) {
     toast('ปรับสต็อกไม่สำเร็จ: ' + err.message);
   }
 }
+
 function fRestock(id) {
   const p = P(id), k = calc(), pn = esc(p.pack_name || 'แพ็ค');
   const hh = D.restocks.filter(r => r.pid === id).sort((a, b) => b.ts - a.ts).slice(0, 8).map(r =>
@@ -509,34 +524,6 @@ async function delRs(rid) {
   closeM();
 }
 
-async function fAudit() {
-  const k = calc();
-  let rows = '';
-  D.products.slice().sort((a,b)=>a.code>b.code?1:-1).forEach(p => {
-    const sysStock = k.stock(p);
-    rows += '<tr><td>'+esc(p.name)+'<div class="mu">'+p.code+'</div></td><td>'+sysStock+' '+p.unit+'</td><td><input type="number" id="aud_'+p.id+'" value="'+sysStock+'" style="width:80px;text-align:center"></td></tr>';
-  });
-  modal('<h2>🔍 ตรวจนับสต็อกหน้างาน (Stock Audit)</h2><div class="mu">ใส่จำนวนนับจริงหน้าตู้ แล้วบันทึกเพื่อปรับปรุงสต็อกให้ตรงความจริง</div><div class="tbl" style="max-height:350px;overflow-y:auto"><table><tr><th>สินค้า</th><th>ระบบ</th><th>นับจริง</th></tr>'+rows+'</table></div>',
-  async () => {
-    for (let p of D.products) {
-      const el = document.getElementById('aud_'+p.id);
-      if (el) {
-        const actual = +el.value;
-        if (!isNaN(actual) && actual >= 0) {
-          const sysStock = k.stock(p);
-          const diff = actual - sysStock;
-          if (diff !== 0) {
-            const newBuyQty = p.buy_qty + diff;
-            await sb.from('products').update({ buy_qty: newBuyQty }).eq('id', p.id);
-          }
-        }
-      }
-    }
-    toast('บันทึกตรวจนับและปรับปรุงสต็อกแล้ว');
-    loadDataFromSupabase();
-  });
-}
-
 async function cancelBill(sid) {
   if (!confirm('ยืนยันยกเลิกบิลขายนี้? สินค้าจะถูกคืนเข้าสต็อก และยอดค้างของสมาชิกจะถูกปรับลดลง')) return;
   const { error } = await sb.from('transactions').delete().eq('id', sid);
@@ -545,13 +532,13 @@ async function cancelBill(sid) {
   toast('ยกเลิกบิลเรียบร้อยแล้ว');
 }
 
-// --- สมาชิกพร้อมปุ่ม Export ---
+// --- หน้าสมาชิก (vCus) ---
 function vCus(k) {
   const tot = Object.values(k.bal).reduce((a,b)=>a+b,0), pd = D.payments.filter(y=>y.status==='pending');
   let pendingHtml = '';
   if (pd.length > 0) {
     let pItems = '';
-    pd.forEach((y, idx) => {
+    pd.forEach(y => {
       pItems += '<div class="row sp" style="margin-top:6px"><span>'+((C(y.cust)||{}).name||'สมาชิก')+' · '+F(y.amount)+'</span><button class="btn s sm" onclick="gate(()=>confirmPay(\''+y.id+'\'))">ยืนยัน</button></div>';
     });
     pendingHtml = '<div class="card"><b>โอนเงินรอตรวจสอบ '+F(pd.reduce((s,y)=>s+y.amount,0))+' ฿</b>'+pItems+'</div>';
@@ -643,61 +630,50 @@ function fPay(id) {
   });
 }
 
+// --- ฟังก์ชันลบประวัติการชำระเงินหรือรายการบิล ---
 async function delPayOrTx(tbl, id) {
   if (!confirm('ยืนยันลบรายการนี้?')) return;
   if (tbl === 'sales') {
-    await sb.from('transactions').delete().eq('id', id);
+    const { error } = await sb.from('transactions').delete().eq('id', id);
+    if (error) return toast('ลบไม่สำเร็จ: ' + error.message);
   } else {
-    await sb.from('payments').delete().eq('id', id);
+    const { error } = await sb.from('payments').delete().eq('id', id);
+    if (error) return toast('ลบไม่สำเร็จ: ' + error.message);
   }
   loadDataFromSupabase();
-  toast('ลบแล้ว');
+  toast('ลบรายการเรียบร้อยแล้ว');
   closeM();
 }
 
+// --- ฟังก์ชันพิมพ์ใบแจ้งหนี้ Statement รายเดือน ---
 function stmt(id) {
-  const c = C(id), ym = V('sm'); if (!ym) return;
-  const [y, m] = ym.split('-');
-  const ss = D.sales.filter(s => s.cust === id && s.method === 'sign' && s.date.startsWith(ym));
-  const ps = D.payments.filter(p => p.cust === id && p.status === 'ok' && p.date.startsWith(ym));
-  let itemsHtml = '';
-  ss.forEach(s => { itemsHtml += '<tr><td>'+s.date+'</td><td>'+s.bill+'</td><td>'+esc((s.items||[]).map(i=>i.name+'×'+i.qty).join(', '))+'</td><td style="text-align:right">'+F(s.total)+'</td></tr>'; });
-  let payHtml = '';
-  ps.forEach(p => { payHtml += '<tr><td>'+p.date+'</td><td>ชำระเงิน ('+(p.method==='transfer'?'โอน':'เงินสด')+')</td><td style="text-align:right">'+F(p.amount)+'</td></tr>'; });
-  const totBuy = ss.reduce((a,b)=>a+b.total,0), totPay = ps.reduce((a,b)=>a+b.amount,0);
-  const w = window.open('', '_blank');
-  w.document.write('<html><head><title>ใบแจ้งยอดหนี้ - '+c.name+'</title><style>body{font-family:Tahoma;padding:25px;font-size:14px}table{width:100%;border-collapse:collapse;margin:10px 0}th,td{border:1px solid #333;padding:8px}th{background:#eee}</style></head><body>' +
-    '<h2>ร้านสวัสดิการทหารม้า — ใบแจ้งยอดหนี้รายบุคคล</h2><div><b>สมาชิก:</b> '+c.name+' ('+c.code+') · <b>ประจำเดือน:</b> '+m+'/'+y+' · <b>วงเงินเครดิต:</b> '+F(c.credit_limit||1000)+' ฿</div>' +
-    '<h3>รายการเซ็นซื้อ</h3><table><tr><th>วันที่</th><th>เลขบิล</th><th>รายการ</th><th style="text-align:right">ยอดเงิน</th></tr>'+(itemsHtml||'<tr><td colspan="4" style="text-align:center">ไม่มีรายการ</td></tr>')+'</table><b>รวมซื้อ: '+F(totBuy)+' ฿</b>' +
-    '<h3>รายการชำระเงิน</h3><table><tr><th>วันที่</th><th>ช่องทาง</th><th style="text-align:right">จำนวนเงิน</th></tr>'+(payHtml||'<tr><td colspan="3" style="text-align:center">ไม่มีรายการ</td></tr>')+'</table><b>รวมชำระ: '+F(totPay)+' ฿</b>' +
-    '<h3 style="margin-top:20px;text-align:right">ยอดหนี้สุทธิประจำเดือน: '+F(totBuy - totPay)+' ฿</h3>' +
-    '<div style="margin-top:40px;display:flex;justify-content:space-between"><div style="text-align:center">ลงชื่อ..................................................<br>(ผู้รับใบแจ้งยอด / กำลังพล)</div><div style="text-align:center">ลงชื่อ..................................................<br>(ผู้รับชำระ / เจ้าหน้าที่สวัสดิการ)</div></div>' +
-    '<script>window.print();<\/script></body></html>');
-  w.document.close();
+  const c = C(id), k = calc();
+  const m = V('sm');
+  const txs = D.sales.filter(s => s.cust === id && s.method === 'sign' && s.date.startsWith(m));
+  const pays = D.payments.filter(y => y.cust === id && y.date.startsWith(m));
+  
+  let rows = '';
+  txs.forEach(s => {
+    rows += '<tr><td>' + s.date + '</td><td>ซื้อบิล ' + s.bill + '</td><td style="text-align:right">' + F(s.total) + '</td></tr>';
+  });
+  pays.forEach(y => {
+    rows += '<tr><td>' + y.date + '</td><td>ชำระเงิน (' + (y.method === 'cash' ? 'เงินสด' : 'โอนเงิน') + ')</td><td style="text-align:right">-' + F(y.amount) + '</td></tr>';
+  });
+
+  const win = window.open('', '_blank');
+  win.document.write(
+    '<html><head><title>ใบแจ้งยอดหนี้ - ' + c.name + '</title>' +
+    '<style>body{font-family:sans-serif;padding:20px;color:#333}h2,h3{margin:0 0 10px 0}table{width:100%;border-collapse:collapse;margin-top:15px}th,td{border:1px solid #ddd;padding:8px;font-size:14px}th{background:#f5f5f5}</style></head>' +
+    '<body><h2>ใบแจ้งยอดหนี้ (Statement)</h2><h3>' + c.name + ' (' + c.code + ') ประจำเดือน ' + m + '</h3>' +
+    '<table><tr><th>วันที่</th><th>รายการ</th><th style="text-align:right">จำนวนเงิน (บาท)</th></tr>' + rows + '</table>' +
+    '<h3 style="margin-top:20px;text-align:right">ยอดค้างชำระสุทธิ: ' + F(k.bal[id]) + ' ฿</h3>' +
+    '</body></html>'
+  );
+  win.document.close();
+  win.print();
 }
 
-const sumS = arr => arr.reduce((a, s) => {
-  a.rev += Number(s.total) || 0;
-  a.cost += Number(s.cost) || 0;
-  return a;
-}, { rev: 0, cost: 0 });
-const daysBack = n => {
-  let arr = [];
-  for (let i = n - 1; i >= 0; i--) {
-    let d = new Date();
-    d.setDate(d.getDate() - i);
-    arr.push(d.toISOString().split('T')[0]);
-  }
-  return arr;
-};
-
-let repViewMode = 'daily'; // มุมมองเริ่มต้น (daily, weekly, monthly, quarterly)
-
-function setRepView(mode) {
-  repViewMode = mode;
-  render();
-}
-
+// --- ฟังก์ชันวิเคราะห์และประมวลผลรายงาน (รองรับการแบ่ง 4 สัปดาห์ & สรุปการลงทุน) ---
 function renderReports() {
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -713,7 +689,12 @@ function renderReports() {
   let weeklyProfit = 0;
   let monthlyProfit = 0;
 
-  const weeklyData = { 1: { sales: 0, cost: 0, profit: 0 }, 2: { sales: 0, cost: 0, profit: 0 }, 3: { sales: 0, cost: 0, profit: 0 }, 4: { sales: 0, cost: 0, profit: 0 } };
+  const weeklyData = { 
+    1: { sales: 0, cost: 0, profit: 0, label: 'สัปดาห์ที่ 1 (วันที่ 1-7)' }, 
+    2: { sales: 0, cost: 0, profit: 0, label: 'สัปดาห์ที่ 2 (วันที่ 8-14)' }, 
+    3: { sales: 0, cost: 0, profit: 0, label: 'สัปดาห์ที่ 3 (วันที่ 15-21)' }, 
+    4: { sales: 0, cost: 0, profit: 0, label: 'สัปดาห์ที่ 4 (วันที่ 22 เป็นต้นไป)' } 
+  };
   
   let totalInvestmentCost = 0;
   D.products.forEach(p => {
@@ -784,219 +765,54 @@ function renderReports() {
   };
 }
 
-// ฟังก์ชัน vRep หลักสำหรับแสดงผลหน้าจอรายงาน
+// --- หน้าแสดงผลรายงาน (vRep) ---
 function vRep() {
   const r = renderReports();
-  const netCashAfterProfit = r.totalSalesAll - r.totalProfitAll; // เงินเมื่อหักกำไร / ต้นทุนสุทธิ
+  const netCashAfterProfit = r.totalSalesAll - r.totalProfitAll;
 
-  return `
-    <div class="row sp" style="margin-bottom:12px">
-      <h2>📊 วิเคราะห์ยอดขาย & รายงานสวัสดิการ</h2>
-      <div class="row" style="flex:none;gap:6px">
-        <button class="btn sm s" onclick="exportReportExcel()">📥 ส่งออก Excel</button>
-        <button class="btn sm" onclick="window.print()">🖨 พิมพ์ PDF / รายงาน</button>
-      </div>
-    </div>
+  let weeklyRows = '';
+  Object.keys(r.weeklyData).forEach(wKey => {
+    const w = r.weeklyData[wKey];
+    weeklyRows += '<div class="row sp" style="margin:6px 0;padding:6px 0;border-bottom:1px solid var(--bd)"><span class="mu">' + w.label + '</span><span>ยอดขาย: <b>' + F(w.sales) + ' ฿</b> · กำไร: <b style="color:var(--pr)">' + F(w.profit) + ' ฿</b></span></div>';
+  });
 
-    <!-- การ์ดสรุปภาพรวม -->
-    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px;">
-      <div class="card">
-        <div class="mu">ยอดขายประจำวัน</div>
-        <div style="font-size:24px;font-weight:bold;color:var(--pr)">${F(r.dailySales)} ฿</div>
-        <div class="mu" style="margin-top:4px">กำไรวันนี้: <b>${F(r.dailyProfit)} ฿</b></div>
-      </div>
-      <div class="card">
-        <div class="mu">ยอดขายประจำสัปดาห์นี้</div>
-        <div style="font-size:24px;font-weight:bold;color:var(--pr)">${F(r.weeklySales)} ฿</div>
-        <div class="mu" style="margin-top:4px">กำไรสัปดาห์นี้: <b>${F(r.weeklyProfit)} ฿</b></div>
-      </div>
-      <div class="card">
-        <div class="mu">ยอดขายประจำเดือนนี้</div>
-        <div style="font-size:24px;font-weight:bold;color:var(--pr)">${F(r.monthlySales)} ฿</div>
-        <div class="mu" style="margin-top:4px">กำไรเดือนนี้: <b>${F(r.monthlyProfit)} ฿</b></div>
-      </div>
-      <div class="card">
-        <div class="mu">ทุนรวมที่ซื้อของทั้งหมด</div>
-        <div style="font-size:24px;font-weight:bold">${F(r.totalInvestmentCost)} ฿</div>
-        <div class="mu" style="margin-top:4px">ยอดขายรวมทั้งหมด: <b>${F(r.totalSalesAll)} ฿</b></div>
-      </div>
-    </div>
+  return '<div class="row sp" style="margin-bottom:12px">' +
+    '<h2>📊 วิเคราะห์ยอดขาย & รายงานสวัสดิการ</h2>' +
+    '<div class="row" style="flex:none;gap:6px">' +
+      '<button class="btn sm s" onclick="exportReportExcel()">📥 ส่งออก Excel</button>' +
+      '<button class="btn sm" onclick="window.print()">🖨 พิมพ์ PDF / รายงาน</button>' +
+    '</div></div>' +
+    
+    '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:16px">' +
+      '<div class="card"><div class="mu">ยอดขายประจำวัน</div><div style="font-size:24px;font-weight:bold;color:var(--pr)">' + F(r.dailySales) + ' ฿</div><div class="mu" style="margin-top:4px">กำไรวันนี้: <b>' + F(r.dailyProfit) + ' ฿</b></div></div>' +
+      '<div class="card"><div class="mu">ยอดขายประจำสัปดาห์นี้</div><div style="font-size:24px;font-weight:bold;color:var(--pr)">' + F(r.weeklySales) + ' ฿</div><div class="mu" style="margin-top:4px">กำไรสัปดาห์นี้: <b>' + F(r.weeklyProfit) + ' ฿</b></div></div>' +
+      '<div class="card"><div class="mu">ยอดขายประจำเดือนนี้</div><div style="font-size:24px;font-weight:bold;color:var(--pr)">' + F(r.monthlySales) + ' ฿</div><div class="mu" style="margin-top:4px">กำไรเดือนนี้: <b>' + F(r.monthlyProfit) + ' ฿</b></div></div>' +
+      '<div class="card"><div class="mu">ทุนรวมที่ซื้อของทั้งหมด</div><div style="font-size:24px;font-weight:bold">' + F(r.totalInvestmentCost) + ' ฿</div><div class="mu" style="margin-top:4px">ยอดขายรวมทั้งหมด: <b>' + F(r.totalSalesAll) + ' ฿</b></div></div>' +
+    '</div>' +
 
-    <!-- การ์ดสรุปการเงินและกำไรที่คาดว่าจะได้รับ -->
-    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 16px;">
-      <div class="card">
-        <h3>💰 สรุปผลกำไรและการเงิน</h3>
-        <div class="row sp" style="margin:8px 0"><span>กำไรสุทธิรวมทั้งหมด</span><b style="color:var(--pr);font-size:18px">${F(r.totalProfitAll)} ฿</b></div>
-        <div class="row sp" style="margin:8px 0"><span>เงินสด/ยอดคงเหลือเมื่อหักกำไร (คืนทุน)</span><b>${F(netCashAfterProfit)} ฿</b></div>
-      </div>
-      <div class="card">
-        <h3>📅 รายละเอียดแบ่ง 4 สัปดาห์ (เดือนนี้)</h3>
-        <div class="row sp" style="margin:4px 0"><span class="mu">สัปดาห์ที่ 1 (วันที่ 1-7)</span><span>ยอดขาย: <b>${F(r.weeklyData[1].sales)} ฿</b> (กำไร: ${F(r.weeklyData[1].profit)} ฿)</span></div>
-        <div class="row sp" style="margin:4px 0"><span class="mu">สัปดาห์ที่ 2 (วันที่ 8-14)</span><span>ยอดขาย: <b>${F(r.weeklyData[2].sales)} ฿</b> (กำไร: ${F(r.weeklyData[2].profit)} ฿)</span></div>
-        <div class="row sp" style="margin:4px 0"><span class="mu">สัปดาห์ที่ 3 (วันที่ 15-21)</span><span>ยอดขาย: <b>${F(r.weeklyData[3].sales)} ฿</b> (กำไร: ${F(r.weeklyData[3].profit)} ฿)</span></div>
-        <div class="row sp" style="margin:4px 0"><span class="mu">สัปดาห์ที่ 4 (วันที่ 22 เป็นต้นไป)</span><span>ยอดขาย: <b>${F(r.weeklyData[4].sales)} ฿</b> (กำไร: ${F(r.weeklyData[4].profit)} ฿)</span></div>
-      </div>
-    </div>
-  `;
+    '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:16px">' +
+      '<div class="card"><h3>💰 สรุปผลกำไรและการเงิน</h3>' +
+        '<div class="row sp" style="margin:8px 0"><span>กำไรสุทธิรวมทั้งหมด (ที่คาดว่าจะได้รับ)</span><b style="color:var(--pr);font-size:18px">' + F(r.totalProfitAll) + ' ฿</b></div>' +
+        '<div class="row sp" style="margin:8px 0"><span>เงินสด/ยอดคงเหลือเมื่อหักกำไร (คืนทุน)</span><b>' + F(netCashAfterProfit) + ' ฿</b></div>' +
+      '</div>' +
+      '<div class="card"><h3>📅 สรุปยอดแยก 4 สัปดาห์ (ประจำเดือนนี้)</h3>' + weeklyRows + '</div>' +
+    '</div>';
 }
 
-function exportSalesExcel() {
-  let rows = [['เลขบิล', 'วันที่', 'ผู้ซื้อ', 'ประเภทการชำระ', 'ยอดรวม (บาท)', 'ต้นทุน (บาท)', 'กำไร (บาท)']];
-  D.sales.slice().sort((a, b) => b.ts - a.ts).forEach(s => {
-    rows.push([s.bill, s.date, s.cust_name, s.method === 'cash' ? 'เงินสด' : 'เซ็นจ่าย', s.total, (s.cost || 0).toFixed(2), (s.total - (s.cost || 0)).toFixed(2)]);
-  });
+function exportReportExcel() {
+  const r = renderReports();
+  let rows = [
+    ['รายงานสรุปยอดขายและสวัสดิการ'],
+    ['ยอดขายประจำวัน', r.dailySales, 'กำไรประจำวัน', r.dailyProfit],
+    ['ยอดขายประจำสัปดาห์', r.weeklySales, 'กำไรประจำสัปดาห์', r.weeklyProfit],
+    ['ยอดขายประจำเดือน', r.monthlySales, 'กำไรประจำเดือน', r.monthlyProfit],
+    ['ทุนรวมซื้อของทั้งหมด', r.totalInvestmentCost, 'ยอดขายรวมทั้งหมด', r.totalSalesAll],
+    ['กำไรสุทธิรวม', r.totalProfitAll, 'เงินคงเหลือหลังหักกำไร', r.totalSalesAll - r.totalProfitAll]
+  ];
   exportToCSV('sales_report_' + today() + '.csv', rows);
-  toast('ดาวน์โหลดรายงานยอดขาย (Excel) แล้ว');
-}
-
-function fSettings() {
-  const pin = localStorage.getItem('mw_pin'), has = !!pin;
-  modal('<h2>⚙️ ตั้งค่าระบบ</h2>' +
-    '<div class="mu">สถานะ PIN: ' + (has ? '<b>เปิดใช้งานอยู่</b>' : '<b>ยังไม่ได้ตั้ง</b>') + '</div>' +
-    '<label>ตั้ง PIN ใหม่ (ตัวเลข 4-6 หลัก, เว้นว่างเพื่อปิดใช้งาน)</label><input id="np" type="password" maxlength="6" inputmode="numeric">' +
-    '<div class="mu" style="margin-top:6px">PIN ป้องกันการแก้ไข/ลบข้อมูลและการเข้าดูรายงาน (ล็อกอัตโนมัติหลัง 5 นาที)</div>' +
-    (has ? '<button class="btn s w" style="margin-top:14px;color:var(--er);border-color:var(--er)" onclick="localStorage.removeItem(\'mw_pin\');unlockUntil=0;closeM();toast(\'ปิด PIN แล้ว\')">🔓 ปิดการใช้ PIN</button>' : ''),
-  () => {
-    const v = V('np').trim();
-    if (v === '') { localStorage.removeItem('mw_pin'); unlockUntil = 0; toast('ปิดการใช้ PIN แล้ว'); return; }
-    if (!/^\d{4,6}$/.test(v)) throw {message: 'PIN ต้องเป็นตัวเลข 4-6 หลัก'};
-    localStorage.setItem('mw_pin', hp(v));
-    unlockUntil = Date.now() + 5 * 60 * 1000;
-    toast('ตั้ง PIN แล้ว');
-  });
+  toast('ดาวน์โหลดรายงาน Excel แล้ว');
 }
 
 function initCharts() {
-  if (salesChartInstance) salesChartInstance.destroy();
-  if (profitChartInstance) profitChartInstance.destroy();
-
-  let labels = [], revData = [], costData = [];
-  let chartColors = {
-    rev: '#2d6a4f',   // เขียวหลัก
-    cost: '#b7e4c7'   // เขียวอ่อน
-  };
-
-  if (repViewMode === 'daily') {
-    const wk = daysBack(7);
-    labels = wk.map(d => { const p = d.split('-'); return p[2] + '/' + p[1]; });
-    revData = wk.map(d => sumS(D.sales.filter(s => s.date === d)).rev);
-    costData = wk.map(d => sumS(D.sales.filter(s => s.date === d)).cost);
-  } else if (repViewMode === 'weekly') {
-    // กำหนดให้ 1 เดือนแบ่งเป็น 4 สัปดาห์ (สัปดาห์ละ 7 วัน ย้อนหลังไป 4 ช่วง)
-    labels = ['สัปดาห์ที่ 4 (ล่าสุด)', 'สัปดาห์ที่ 3', 'สัปดาห์ที่ 2', 'สัปดาห์ที่ 1 (เก่าสุด)'].reverse();
-    let rArr = [], cArr = [];
-    for (let i = 3; i >= 0; i--) {
-      const chunk = D.sales.filter(s => {
-        if (!s.date) return false;
-        const diff = (new Date() - new Date(s.date)) / (1000 * 60 * 60 * 24);
-        return diff >= i * 7 && diff < (i + 1) * 7;
-      });
-      rArr.push(sumS(chunk).rev);
-      cArr.push(sumS(chunk).cost);
-    }
-    revData = rArr;
-    costData = cArr;
-  } else if (repViewMode === 'monthly') {
-    const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-    const curY = new Date().getFullYear();
-    labels = months;
-    for (let m = 1; m <= 12; m++) {
-      const ym = curY + '-' + pad(m);
-      const chunk = D.sales.filter(s => (s.date || '').startsWith(ym));
-      revData.push(sumS(chunk).rev);
-      costData.push(sumS(chunk).cost);
-    }
-  } else if (repViewMode === 'quarterly') {
-    // โหมดเปรียบเทียบไตรมาส พร้อมโทนสีแยกแต่ละไตรมาส
-    labels = ['ไตรมาส 1 (Q1)', 'ไตรมาส 2 (Q2)', 'ไตรมาส 3 (Q3)', 'ไตรมาส 4 (Q4)'];
-    const qMonths = [[10,11,12], [1,2,3], [4,5,6], [7,8,9]];
-    qMonths.forEach(mList => {
-      const chunk = D.sales.filter(s => {
-        if (!s.date) return false;
-        const [y, m] = s.date.split('-').map(Number);
-        return mList.includes(m);
-      });
-      revData.push(sumS(chunk).rev);
-      costData.push(sumS(chunk).cost);
-    });
-  }
-
-  const ctxSales = document.getElementById('salesChart');
-  if (ctxSales) {
-    salesChartInstance = new Chart(ctxSales, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          { label: 'ยอดขายรวม (บาท)', data: revData, backgroundColor: repViewMode === 'quarterly' ? ['#2d6a4f', '#52b788', '#d4a373', '#457b9d'] : chartColors.rev, borderRadius: 8 },
-          { label: 'ต้นทุนสินค้า (บาท)', data: costData, backgroundColor: '#d8f3dc', borderRadius: 8 }
-        ]
-      },
-      options: { 
-        responsive: true, 
-        maintainAspectRatio: false, 
-        plugins: { legend: { position: 'bottom' } },
-        scales: { y: { beginAtZero: true } }
-      }
-    });
-  }
-
-  const allS = sumS(D.sales);
-  const ctxProfit = document.getElementById('profitChart');
-  if (ctxProfit) {
-    profitChartInstance = new Chart(ctxProfit, {
-      type: 'doughnut',
-      data: {
-        labels: ['ต้นทุนรวมทั้งหมด', 'กำไรสุทธิรวม'],
-        datasets: [{
-          data: [allS.cost || 1, Math.max(0, allS.rev - allS.cost)],
-          backgroundColor: ['#b0bec5', '#2b9348'],
-          borderWidth: 0
-        }]
-      },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
-    });
-  }
-  // --- ฟังก์ชัน Export เป็นไฟล์ .xlsx แท้ (รองรับภาษาไทยและจัดหน้าตาสวยงาม) ---
-// --- ฟังก์ชัน Export เป็นไฟล์ .xlsx แท้ (SheetJS) ---
-function exportToXLSX(filename, sheetName, headers, dataRows) {
-  // ตรวจสอบว่าโหลดไลบรารี XLSX มาหรือยัง หากยังให้แจ้งเตือน
-  if (typeof XLSX === 'undefined') {
-    toast('ยังไม่ได้โหลดไลบรารี SheetJS ใน index.html');
-    return;
-  }
-
-  const wsData = [headers, ...dataRows];
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-  // คำนวณความกว้างคอลัมน์อัตโนมัติเพื่อให้พอดีกับข้อความ
-  const colWidths = headers.map((h, i) => {
-    let maxLen = h.length;
-    dataRows.forEach(row => {
-      const val = row[i] !== undefined && row[i] !== null ? String(row[i]) : '';
-      if (val.length > maxLen) maxLen = val.length;
-    });
-    return { wch: maxLen + 4 };
-  });
-  ws['!cols'] = colWidths;
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, sheetName);
-  
-  // บันทึกออกเป็นไฟล์ Excel (.xlsx) ของแท้ทันที
-  XLSX.writeFile(wb, filename);
+  // ฟังก์ชันรองรับการวาดกราฟถ้ามี
 }
-
-}
-// --- ฟังก์ชันเปิดหน้าต่างรับสินค้าเพิ่ม (Restock) ---
-window.openRestockModal = function(productId) {
-  fRestock(productId);
-};
-
-// --- ฟังก์ชันเปิดหน้าต่างแก้ไขสินค้า (Edit Product) หรือเพิ่มสินค้าใหม่ ---
-window.openProdModal = function(productId) {
-  fProd(productId);
-};
-// เริ่มต้นโหลดข้อมูลและเปิด Realtime
-loadDataFromSupabase();
-initRealtime();
