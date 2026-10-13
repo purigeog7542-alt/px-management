@@ -184,17 +184,16 @@ function render() {
     // เพิ่มปุ่มลิงก์ไปหน้าแดชบอร์ดแยก
     navHtml += '<button onclick="window.location.href=\'dashboard.html\'">📊<br>แดชบอร์ด</button>';
     navEl.innerHTML = navHtml;
+  }
   
   const k = calc();
   let content = '';
   if (tab === 'sell') content = vSell(k);
   else if (tab === 'stock') content = vStock(k);
   else if (tab === 'cus') content = vCus(k);
-
   
   const appEl = document.getElementById('app');
   if (appEl) appEl.innerHTML = content;
-  if (tab === 'rep') initCharts();
 }
 
 function vSell(k) {
@@ -678,149 +677,6 @@ function stmt(id) {
   win.print();
 }
 
-// --- ฟังก์ชันวิเคราะห์และประมวลผลรายงาน (รองรับการแบ่ง 4 สัปดาห์ & สรุปการลงทุน) ---
-function renderReports() {
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth(); // 0-11
-
-  let totalSalesAll = 0;
-  let totalCostAll = 0;
-  let dailySales = 0;
-  let weeklySales = 0;
-  let monthlySales = 0;
-  
-  let dailyProfit = 0;
-  let weeklyProfit = 0;
-  let monthlyProfit = 0;
-
-  const weeklyData = { 
-    1: { sales: 0, cost: 0, profit: 0, label: 'สัปดาห์ที่ 1 (วันที่ 1-7)' }, 
-    2: { sales: 0, cost: 0, profit: 0, label: 'สัปดาห์ที่ 2 (วันที่ 8-14)' }, 
-    3: { sales: 0, cost: 0, profit: 0, label: 'สัปดาห์ที่ 3 (วันที่ 15-21)' }, 
-    4: { sales: 0, cost: 0, profit: 0, label: 'สัปดาห์ที่ 4 (วันที่ 22 เป็นต้นไป)' } 
-  };
-  
-  let totalInvestmentCost = 0;
-  D.products.forEach(p => {
-    let pCost = Number(p.buy_cost) || 0;
-    const pRestocks = D.restocks.filter(r => r.pid === p.id);
-    pRestocks.forEach(r => pCost += Number(r.cost) || 0);
-    totalInvestmentCost += pCost;
-  });
-
-  const todayStr = now.toISOString().split('T')[0];
-
-  D.sales.forEach(s => {
-    const saleDate = new Date(s.ts || s.date);
-    const saleDateStr = saleDate.toISOString().split('T')[0];
-    
-    if (saleDate.getFullYear() < 2024) return;
-
-    let sRevenue = Number(s.total) || 0;
-    let sCost = 0;
-    
-    (s.items || []).forEach(i => {
-      const prod = D.products.find(p => p.id === i.pid);
-      const cPerUnit = prod ? (D.cost ? D.cost(prod) : (prod.buy_cost / (prod.buy_qty || 1))) : 0;
-      sCost += cPerUnit * (i.qty || 0);
-    });
-
-    let sProfit = sRevenue - sCost;
-    totalSalesAll += sRevenue;
-    totalCostAll += sCost;
-
-    if (saleDateStr === todayStr) {
-      dailySales += sRevenue;
-      dailyProfit += sProfit;
-    }
-
-    if (saleDate.getFullYear() === currentYear && saleDate.getMonth() === currentMonth) {
-      monthlySales += sRevenue;
-      monthlyProfit += sProfit;
-
-      const dayOfMonth = saleDate.getDate();
-      let weekNum = Math.ceil(dayOfMonth / 7);
-      if (weekNum > 4) weekNum = 4;
-
-      weeklyData[weekNum].sales += sRevenue;
-      weeklyData[weekNum].cost += sCost;
-      weeklyData[weekNum].profit += sProfit;
-    }
-  });
-
-  const currentDayOfMonth = now.getDate();
-  let currentWeekNum = Math.ceil(currentDayOfMonth / 7);
-  if (currentWeekNum > 4) currentWeekNum = 4;
-
-  weeklySales = weeklyData[currentWeekNum].sales;
-  weeklyProfit = weeklyData[currentWeekNum].profit;
-
-  return {
-    totalSalesAll,
-    totalInvestmentCost,
-    totalProfitAll: totalSalesAll - totalCostAll,
-    dailySales,
-    dailyProfit,
-    weeklySales,
-    weeklyProfit,
-    monthlySales,
-    monthlyProfit,
-    weeklyData
-  };
-}
-
-// --- หน้าแสดงผลรายงาน (vRep) แบบลื่นไหล ---
-function vRep() {
-  const r = renderReports();
-  const netCashAfterProfit = r.totalSalesAll - r.totalProfitAll;
-
-  let weeklyRows = '';
-  Object.keys(r.weeklyData).forEach(wKey => {
-    const w = r.weeklyData[wKey];
-    weeklyRows += '<div class="row sp" style="margin:6px 0;padding:6px 0;border-bottom:1px solid var(--bd)"><span class="mu">' + w.label + '</span><span>ยอดขาย: <b>' + F(w.sales) + ' ฿</b> · กำไร: <b style="color:var(--pr)">' + F(w.profit) + ' ฿</b></span></div>';
-  });
-
-  return '<div class="row sp" style="margin-bottom:12px">' +
-    '<h2>📊 วิเคราะห์ยอดขาย & รายงานสวัสดิการ</h2>' +
-    '<div class="row" style="flex:none;gap:6px">' +
-      '<button class="btn sm s" onclick="exportReportExcel()">📥 ส่งออก Excel</button>' +
-      '<button class="btn sm" onclick="window.print()">🖨 พิมพ์ PDF / รายงาน</button>' +
-    '</div></div>' +
-    
-    '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:16px">' +
-      '<div class="card"><div class="mu">ยอดขายประจำวัน</div><div style="font-size:24px;font-weight:bold;color:var(--pr)">' + F(r.dailySales) + ' ฿</div><div class="mu" style="margin-top:4px">กำไรวันนี้: <b>' + F(r.dailyProfit) + ' ฿</b></div></div>' +
-      '<div class="card"><div class="mu">ยอดขายประจำสัปดาห์นี้</div><div style="font-size:24px;font-weight:bold;color:var(--pr)">' + F(r.weeklySales) + ' ฿</div><div class="mu" style="margin-top:4px">กำไรสัปดาห์นี้: <b>' + F(r.weeklyProfit) + ' ฿</b></div></div>' +
-      '<div class="card"><div class="mu">ยอดขายประจำเดือนนี้</div><div style="font-size:24px;font-weight:bold;color:var(--pr)">' + F(r.monthlySales) + ' ฿</div><div class="mu" style="margin-top:4px">กำไรเดือนนี้: <b>' + F(r.monthlyProfit) + ' ฿</b></div></div>' +
-      '<div class="card"><div class="mu">ทุนรวมที่ซื้อของทั้งหมด</div><div style="font-size:24px;font-weight:bold">' + F(r.totalInvestmentCost) + ' ฿</div><div class="mu" style="margin-top:4px">ยอดขายรวมทั้งหมด: <b>' + F(r.totalSalesAll) + ' ฿</b></div></div>' +
-    '</div>' +
-
-    '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:16px">' +
-      '<div class="card"><h3>💰 สรุปผลกำไรและการเงิน</h3>' +
-        '<div class="row sp" style="margin:8px 0"><span>กำไรสุทธิรวมทั้งหมด (ที่คาดว่าจะได้รับ)</span><b style="color:var(--pr);font-size:18px">' + F(r.totalProfitAll) + ' ฿</b></div>' +
-        '<div class="row sp" style="margin:8px 0"><span>เงินสด/ยอดคงเหลือเมื่อหักกำไร (คืนทุน)</span><b>' + F(netCashAfterProfit) + ' ฿</b></div>' +
-      '</div>' +
-      '<div class="card"><h3>📅 สรุปยอดแยก 4 สัปดาห์ (ประจำเดือนนี้)</h3>' + weeklyRows + '</div>' +
-    '</div>';
-}
-
-function exportReportExcel() {
-  const r = renderReports();
-  let rows = [
-    ['รายงานสรุปยอดขายและสวัสดิการ'],
-    ['ยอดขายประจำวัน', r.dailySales, 'กำไรประจำวัน', r.dailyProfit],
-    ['ยอดขายประจำสัปดาห์', r.weeklySales, 'กำไรประจำสัปดาห์', r.weeklyProfit],
-    ['ยอดขายประจำเดือน', r.monthlySales, 'กำไรประจำเดือน', r.monthlyProfit],
-    ['ทุนรวมซื้อของทั้งหมด', r.totalInvestmentCost, 'ยอดขายรวมทั้งหมด', r.totalSalesAll],
-    ['กำไรสุทธิรวม', r.totalProfitAll, 'เงินคงเหลือหลังหักกำไร', r.totalSalesAll - r.totalProfitAll]
-  ];
-  exportToCSV('sales_report_' + today() + '.csv', rows);
-  toast('ดาวน์โหลดรายงาน Excel แล้ว');
-}
-
-function initCharts() {
-  // ฟังก์ชันรองรับการวาดกราฟถ้ามี
-}
 // --- สั่งเริ่มทำงานเมื่อเปิดหน้าเว็บ ---
 document.addEventListener('DOMContentLoaded', () => {
   loadDataFromSupabase();
