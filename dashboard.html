@@ -37,6 +37,7 @@
       box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
     header h1 { margin: 0; font-size: 20px; }
+    .header-btns { display: flex; gap: 10px; }
     .btn {
       background: white;
       color: var(--primary);
@@ -110,13 +111,21 @@
       margin-bottom: 15px;
     }
     .chart-header h3 { margin: 0; font-size: 16px; }
+
+    @media print {
+      .header-btns { display: none; }
+      body { background: white; padding: 0; }
+    }
   </style>
 </head>
 <body>
 
   <header>
     <h1>📊 แดชบอร์ดวิเคราะห์ยอดขาย & สวัสดิการ</h1>
-    <a href="index.html" class="btn">⬅ กลับหน้าขายสินค้า</a>
+    <div class="header-btns">
+      <button class="btn" onclick="window.print()">🖨 พิมพ์ PDF / รายงาน</button>
+      <a href="index.html" class="btn">⬅ กลับหน้าขายสินค้า</a>
+    </div>
   </header>
 
   <!-- 1. การ์ดสรุปยอดขายแบบแยกช่วงเวลา (KPIs) -->
@@ -143,12 +152,16 @@
     </div>
   </div>
 
-  <!-- 2. สรุปต้นทุนรวมและมูลค่าสต็อก -->
+  <!-- 2. สรุปต้นทุนรวมและมูลค่าสต็อก & ยอดค้างสมาชิก -->
   <div class="summary-card">
-    <h3>📦 สรุปต้นทุน สต็อก และกำไรภาพรวม</h3>
+    <h3>📦 สรุปต้นทุน สต็อก และยอดค้างสมาชิกภาพรวม</h3>
+    <div class="summary-row">
+      <span>ยอดค้างชำระสุทธิของสมาชิกทั้งหมด (ยอดเซ็นจ่ายคงค้าง):</span>
+      <b id="totalCreditBalance" style="color: var(--danger);">0.00 ฿</b>
+    </div>
     <div class="summary-row">
       <span>ต้นทุนสินค้าทั้งหมดที่ลงไป (รวมการรับของทั้งหมด):</span>
-      <b id="totalPurchasedCost" style="color: var(--danger);">0.00 ฿</b>
+      <b id="totalPurchasedCost">0.00 ฿</b>
     </div>
     <div class="summary-row">
       <span>กำไรสุทธิรวมทั้งหมด (ที่ขายได้แล้ว):</span>
@@ -202,11 +215,13 @@
 
     async function loadDashboardData() {
       try {
-        const [pRes, sRes, iRes, rRes] = await Promise.all([
+        const [pRes, sRes, iRes, rRes, mRes, payRes] = await Promise.all([
           sb.from('products').select('*'),
           sb.from('transactions').select('*'),
           sb.from('transaction_items').select('*'),
-          sb.from('restocks').select('*')
+          sb.from('restocks').select('*'),
+          sb.from('members').select('*'),
+          sb.from('payments').select('*')
         ]);
 
         if (pRes.error) throw pRes.error;
@@ -216,11 +231,19 @@
         const transactions = sRes.data || [];
         const items = iRes.data || [];
         const restocks = rRes.data || [];
+        const members = mRes.data || [];
+        const payments = payRes.data || [];
+
+        // คำนวณยอดค้างชำระสมาชิกตรงกันกับระบบหลัก
+        const bal = {};
+        members.forEach(c => bal[c.id] = +c.opening || 0);
+        transactions.forEach(s => { if (s.method === 'sign' && s.cust in bal) bal[s.cust] += Number(s.total) || 0; });
+        payments.forEach(y => { if (y.cust in bal) bal[y.cust] -= Number(y.amount) || 0; });
+        let totalCreditBalance = Object.values(bal).reduce((a, b) => a + b, 0);
 
         const today = todayStr();
         const currentMonth = today.slice(0, 7); // YYYY-MM
 
-        // คำนวณวันที่ย้อนหลัง 7 วันสำหรับรายสัปดาห์
         const now = new Date();
         const sevenDaysAgo = new Date(now.setDate(now.getDate() - 7)).toISOString().slice(0, 10);
 
@@ -229,7 +252,7 @@
         let monthlySales = 0, monthlyCost = 0;
         let totalSalesAll = 0, totalCostAll = 0;
 
-        const dailyMap = {}; // { '2026-10-13': { sales: 0, cost: 0 } }
+        const dailyMap = {}; 
         const productSalesMap = {};
 
         transactions.forEach(tx => {
@@ -240,23 +263,19 @@
           totalSalesAll += tSales;
           totalCostAll += tCost;
 
-          // รายวันปัจจุบัน
           if (d === today) {
             dailySales += tSales;
             dailyCost += tCost;
           }
-          // รายสัปดาห์ (7 วันล่าสุด)
           if (d >= sevenDaysAgo) {
             weeklySales += tSales;
             weeklyCost += tCost;
           }
-          // รายเดือน
           if (d && d.startsWith(currentMonth)) {
             monthlySales += tSales;
             monthlyCost += tCost;
           }
 
-          // จัดกลุ่มรายวันทำกราฟ
           if (d) {
             if (!dailyMap[d]) dailyMap[d] = { sales: 0, cost: 0 };
             dailyMap[d].sales += tSales;
@@ -264,19 +283,16 @@
           }
         });
 
-        // คำนวณยอดขายตามสินค้า
         items.forEach(item => {
           const prodName = item.name || 'อื่นๆ';
           const subTotal = (Number(item.qty) || 0) * (Number(item.unit_price) || 0);
           productSalesMap[prodName] = (productSalesMap[prodName] || 0) + subTotal;
         });
 
-        // คำนวณต้นทุนรวมทั้งหมดที่เคยซื้อเข้า (Products Initial Cost + Restocks)
         let totalPurchasedCost = 0;
         products.forEach(p => totalPurchasedCost += Number(p.buy_cost) || 0);
         restocks.forEach(r => totalPurchasedCost += Number(r.cost) || 0);
 
-        // คำนวณมูลค่าสต็อกคงเหลือปัจจุบัน
         let stockInventoryValue = 0;
         products.forEach(p => {
           const stockQty = Number(p.buy_qty) || 0;
@@ -290,7 +306,7 @@
         const totalProfitAll = totalSalesAll - totalCostAll;
         const markupRate = totalCostAll > 0 ? ((totalProfitAll / totalCostAll) * 100) : 0;
 
-        // อัปเดตการ์ด KPIs
+        // อัปเดต UI KPIs
         document.getElementById('dailySales').textContent = F(dailySales) + ' ฿';
         document.getElementById('dailyProfit').textContent = 'กำไรวันนี้: ' + F(dailyProfit) + ' ฿';
 
@@ -302,7 +318,8 @@
 
         document.getElementById('markupRate').textContent = F(markupRate) + ' %';
 
-        // อัปเดตการ์ดสรุปต้นทุน
+        // อัปเดต UI Summary
+        document.getElementById('totalCreditBalance').textContent = F(totalCreditBalance) + ' ฿';
         document.getElementById('totalPurchasedCost').textContent = F(totalPurchasedCost) + ' ฿';
         document.getElementById('totalProfitAll').textContent = F(totalProfitAll) + ' ฿';
         document.getElementById('stockInventoryValue').textContent = F(stockInventoryValue) + ' ฿';
@@ -318,9 +335,8 @@
       }
     }
 
-    // กราฟแท่งคู่ ยอดขาย vs ต้นทุน
     function renderSalesCostChart(dailyMap) {
-      const dates = Object.keys(dailyMap).sort().slice(-10); // แสดง 10 วันล่าสุด
+      const dates = Object.keys(dailyMap).sort().slice(-10);
       const salesData = dates.map(d => dailyMap[d].sales);
       const costData = dates.map(d => dailyMap[d].cost);
 
@@ -332,29 +348,14 @@
         data: {
           labels: dates,
           datasets: [
-            {
-              label: 'ยอดขาย (บาท)',
-              data: salesData,
-              backgroundColor: '#2d6a4f',
-              borderRadius: 4
-            },
-            {
-              label: 'ต้นทุนสินค้า (บาท)',
-              data: costData,
-              backgroundColor: '#adb5bd',
-              borderRadius: 4
-            }
+            { label: 'ยอดขาย (บาท)', data: salesData, backgroundColor: '#2d6a4f', borderRadius: 4 },
+            { label: 'ต้นทุนสินค้า (บาท)', data: costData, backgroundColor: '#adb5bd', borderRadius: 4 }
           ]
         },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: { y: { beginAtZero: true } }
-        }
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
       });
     }
 
-    // กราฟวงกลม สัดส่วนต้นทุน vs กำไร
     function renderCostProfitChart(totalCost, totalProfit) {
       const ctx = document.getElementById('costProfitPieChart').getContext('2d');
       if (costProfitChartInstance) costProfitChartInstance.destroy();
@@ -363,20 +364,12 @@
         type: 'doughnut',
         data: {
           labels: ['ต้นทุนสินค้าขาย', 'กำไรสุทธิ'],
-          datasets: [{
-            data: [totalCost, totalProfit],
-            backgroundColor: ['#adb5bd', '#2d6a4f']
-          }]
+          datasets: [{ data: [totalCost, totalProfit], backgroundColor: ['#adb5bd', '#2d6a4f'] }]
         },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { position: 'bottom' } }
-        }
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
       });
     }
 
-    // กราฟสินค้าขายดี
     function renderTopProductsChart(prodMap) {
       const sortedProds = Object.entries(prodMap).sort((a,b) => b[1] - a[1]).slice(0, 7);
       const labels = sortedProds.map(i => i[0]);
@@ -389,16 +382,9 @@
         type: 'pie',
         data: {
           labels: labels,
-          datasets: [{
-            data: data,
-            backgroundColor: ['#1b4332', '#2d6a4f', '#40916c', '#52b788', '#74c69d', '#95d5b2', '#b7e4c7']
-          }]
+          datasets: [{ data: data, backgroundColor: ['#1b4332', '#2d6a4f', '#40916c', '#52b788', '#74c69d', '#95d5b2', '#b7e4c7'] }]
         },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { position: 'bottom' } }
-        }
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
       });
     }
 
