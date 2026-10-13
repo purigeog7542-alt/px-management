@@ -51,7 +51,6 @@
     }
     .btn:hover { background: #e0e0e0; }
     
-    /* Grid KPI Cards */
     .grid-kpi {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -64,13 +63,11 @@
       border-radius: 10px;
       box-shadow: 0 2px 5px rgba(0,0,0,0.05);
       border: 1px solid var(--border);
-      position: relative;
     }
     .kpi-card .title { font-size: 13px; color: #666; margin-bottom: 6px; font-weight: 600; }
     .kpi-card .value { font-size: 24px; font-weight: bold; color: var(--primary); }
     .kpi-card .sub-text { font-size: 12px; color: #2a9d8f; margin-top: 6px; font-weight: 500; }
 
-    /* Summary Card Section */
     .summary-card {
       background: var(--card-bg);
       padding: 20px;
@@ -89,7 +86,6 @@
     }
     .summary-row:last-child { border-bottom: none; }
 
-    /* Grid Charts Section */
     .grid-charts {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
@@ -152,7 +148,7 @@
     </div>
   </div>
 
-  <!-- 2. สรุปต้นทุนรวมและมูลค่าสต็อก & ยอดค้างสมาชิก -->
+  <!-- 2. สรุปต้นทุนรวมและมูลค่าสต็อกภาพรวม -->
   <div class="summary-card">
     <h3>📦 สรุปต้นทุน สต็อก และยอดค้างสมาชิกภาพรวม</h3>
     <div class="summary-row">
@@ -160,16 +156,16 @@
       <b id="totalCreditBalance" style="color: var(--danger);">0.00 ฿</b>
     </div>
     <div class="summary-row">
-      <span>ต้นทุนสินค้าทั้งหมดที่ลงไป (รวมการรับของทั้งหมด):</span>
-      <b id="totalPurchasedCost">0.00 ฿</b>
+      <span>ต้นทุนสินค้าทั้งหมดที่ลงไปตามตู้ (รวมทุกล็อต):</span>
+      <b id="totalPurchasedCost" style="color: var(--danger);">10,879.00 ฿</b>
     </div>
     <div class="summary-row">
-      <span>กำไรสุทธิรวมทั้งหมด (ที่ขายได้แล้ว):</span>
-      <b id="totalProfitAll" style="color: #2d6a4f;">0.00 ฿</b>
+      <span>ยอดขายรวมเป้าหมาย (หากขายหมดตู้ 1,122 ชิ้น):</span>
+      <b>18,408.00 ฿</b>
     </div>
     <div class="summary-row">
-      <span>มูลค่าสินค้าคงเหลือในคลัง (ราคาต้นทุน):</span>
-      <b id="stockInventoryValue" style="color: #2a9d8f;">0.00 ฿</b>
+      <span>กำไรสุทธิรวมเป้าหมาย (หากขายหมดตู้):</span>
+      <b style="color: #2d6a4f;">7,529.00 ฿</b>
     </div>
   </div>
 
@@ -227,14 +223,12 @@
         if (pRes.error) throw pRes.error;
         if (sRes.error) throw sRes.error;
 
-        const products = pRes.data || [];
         const transactions = sRes.data || [];
         const items = iRes.data || [];
-        const restocks = rRes.data || [];
         const members = mRes.data || [];
         const payments = payRes.data || [];
 
-        // คำนวณยอดค้างชำระสมาชิกตรงกันกับระบบหลัก
+        // คำนวณยอดค้างชำระสมาชิก
         const bal = {};
         members.forEach(c => bal[c.id] = +c.opening || 0);
         transactions.forEach(s => { if (s.method === 'sign' && s.cust in bal) bal[s.cust] += Number(s.total) || 0; });
@@ -242,15 +236,13 @@
         let totalCreditBalance = Object.values(bal).reduce((a, b) => a + b, 0);
 
         const today = todayStr();
-        const currentMonth = today.slice(0, 7); // YYYY-MM
-
+        const currentMonth = today.slice(0, 7);
         const now = new Date();
         const sevenDaysAgo = new Date(now.setDate(now.getDate() - 7)).toISOString().slice(0, 10);
 
         let dailySales = 0, dailyCost = 0;
         let weeklySales = 0, weeklyCost = 0;
         let monthlySales = 0, monthlyCost = 0;
-        let totalSalesAll = 0, totalCostAll = 0;
 
         const dailyMap = {}; 
         const productSalesMap = {};
@@ -260,21 +252,9 @@
           const tCost = Number(tx.cost) || 0;
           const d = tx.date;
 
-          totalSalesAll += tSales;
-          totalCostAll += tCost;
-
-          if (d === today) {
-            dailySales += tSales;
-            dailyCost += tCost;
-          }
-          if (d >= sevenDaysAgo) {
-            weeklySales += tSales;
-            weeklyCost += tCost;
-          }
-          if (d && d.startsWith(currentMonth)) {
-            monthlySales += tSales;
-            monthlyCost += tCost;
-          }
+          if (d === today) { dailySales += tSales; dailyCost += tCost; }
+          if (d >= sevenDaysAgo) { weeklySales += tSales; weeklyCost += tCost; }
+          if (d && d.startsWith(currentMonth)) { monthlySales += tSales; monthlyCost += tCost; }
 
           if (d) {
             if (!dailyMap[d]) dailyMap[d] = { sales: 0, cost: 0 };
@@ -289,44 +269,24 @@
           productSalesMap[prodName] = (productSalesMap[prodName] || 0) + subTotal;
         });
 
-        let totalPurchasedCost = 0;
-        products.forEach(p => totalPurchasedCost += Number(p.buy_cost) || 0);
-        restocks.forEach(r => totalPurchasedCost += Number(r.cost) || 0);
-
-        let stockInventoryValue = 0;
-        products.forEach(p => {
-          const stockQty = Number(p.buy_qty) || 0;
-          const unitCost = stockQty > 0 ? (Number(p.buy_cost) / stockQty) : (Number(p.price) * 0.7);
-          stockInventoryValue += stockQty * unitCost;
-        });
-
         const dailyProfit = dailySales - dailyCost;
         const weeklyProfit = weeklySales - weeklyCost;
         const monthlyProfit = monthlySales - monthlyCost;
-        const totalProfitAll = totalSalesAll - totalCostAll;
-        const markupRate = totalCostAll > 0 ? ((totalProfitAll / totalCostAll) * 100) : 0;
 
         // อัปเดต UI KPIs
         document.getElementById('dailySales').textContent = F(dailySales) + ' ฿';
         document.getElementById('dailyProfit').textContent = 'กำไรวันนี้: ' + F(dailyProfit) + ' ฿';
-
         document.getElementById('weeklySales').textContent = F(weeklySales) + ' ฿';
         document.getElementById('weeklyProfit').textContent = 'กำไรสัปดาห์นี้: ' + F(weeklyProfit) + ' ฿';
-
         document.getElementById('monthlySales').textContent = F(monthlySales) + ' ฿';
         document.getElementById('monthlyProfit').textContent = 'กำไรเดือนนี้: ' + F(monthlyProfit) + ' ฿';
+        document.getElementById('markupRate').textContent = '69.2 %'; // คำนวณจากกำไรเป้าหมาย 7,529 / ต้นทุน 10,879
 
-        document.getElementById('markupRate').textContent = F(markupRate) + ' %';
-
-        // อัปเดต UI Summary
         document.getElementById('totalCreditBalance').textContent = F(totalCreditBalance) + ' ฿';
-        document.getElementById('totalPurchasedCost').textContent = F(totalPurchasedCost) + ' ฿';
-        document.getElementById('totalProfitAll').textContent = F(totalProfitAll) + ' ฿';
-        document.getElementById('stockInventoryValue').textContent = F(stockInventoryValue) + ' ฿';
 
         // วาดกราฟ
         renderSalesCostChart(dailyMap);
-        renderCostProfitChart(totalCostAll, totalProfitAll);
+        renderCostProfitChart(10879, 7529); // ใช้ตัวเลขรวมเป้าหมายตู้
         renderTopProductsChart(productSalesMap);
 
       } catch (err) {
@@ -363,7 +323,7 @@
       costProfitChartInstance = new Chart(ctx, {
         type: 'doughnut',
         data: {
-          labels: ['ต้นทุนสินค้าขาย', 'กำไรสุทธิ'],
+          labels: ['ต้นทุนสินค้า (เป้าหมาย)', 'กำไรสุทธิ (เป้าหมาย)'],
           datasets: [{ data: [totalCost, totalProfit], backgroundColor: ['#adb5bd', '#2d6a4f'] }]
         },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
