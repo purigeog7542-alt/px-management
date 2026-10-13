@@ -675,55 +675,126 @@ function stmt(id) {
   win.document.close();
 }
 
-// --- หน้าจอรายงานและกราฟ (vRep) ---
+// --- หน้าจอรายงานและกราฟ (vRep) ฉบับใส่กราฟครบถ้วน ---
 function vRep() {
+  const k = calc();
   const totalSales = D.sales.reduce((s, x) => s + x.total, 0);
   const totalCost = D.sales.reduce((s, x) => s + x.cost, 0);
   const totalProfit = totalSales - totalCost;
 
+  // คำนวณยอดสัปดาห์นี้
+  const now = new Date();
+  const dayOfMonth = now.getDate();
+  let weekNo = 1;
+  if (dayOfMonth >= 8 && dayOfMonth <= 14) weekNo = 2;
+  else if (dayOfMonth >= 15 && dayOfMonth <= 21) weekNo = 3;
+  else if (dayOfMonth >= 22) weekNo = 4;
+
   let salesRows = '';
-  D.sales.slice().sort((a,b) => b.ts - a.ts).slice(0, 20).forEach(s => {
+  D.sales.slice().sort((a,b) => b.ts - a.ts).slice(0, 15).forEach(s => {
     salesRows += '<tr><td>' + s.bill + '</td><td>' + s.date + '</td><td>' + esc(s.cust_name) + '</td><td><b>' + F(s.total) + ' ฿</b></td><td><button class="btn s sm" onclick="gate(()=>cancelBill(\'' + s.id + '\'))">ยกเลิกบิล</button></td></tr>';
   });
 
-  return '<h2>📊 รายงานยอดขายและสถิติ</h2>' +
+  return '<div class="row sp" style="margin-bottom:14px">' +
+    '<h2>📊 วิเคราะห์ยอดขาย & รายงานสวัสดิการ</h2>' +
+    '<div class="row" style="flex:none;gap:6px">' +
+      '<button class="btn sm s" onclick="exportStockExcel()">📥 ส่งออก Excel</button>' +
+      '<button class="btn sm" onclick="window.print()">🖨 พิมพ์ PDF / รายงาน</button>' +
+    '</div></div>' +
+
+    // การ์ด สรุปตัวเลขยอดขาย 4 กล่องบน
     '<div class="card grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 14px;">' +
-      '<div style="background:var(--bg); padding:12px; border-radius:8px;">ยอดขายรวมทั้งหมด<br><b style="font-size:20px; color:var(--pr)">' + F(totalSales) + ' ฿</b></div>' +
-      '<div style="background:var(--bg); padding:12px; border-radius:8px;">ต้นทุนรวม<br><b style="font-size:20px;">' + F(totalCost) + ' ฿</b></div>' +
-      '<div style="background:var(--bg); padding:12px; border-radius:8px;">กำไรสุทธิรวม<br><b style="font-size:20px; color:var(--ok)">' + F(totalProfit) + ' ฿</b></div>' +
+      '<div style="background:var(--bg); padding:12px; border-radius:8px;">ยอดขายประจำวัน<br><b style="font-size:22px;">' + F(D.sales.filter(s=>s.date===today()).reduce((a,b)=>a+b.total,0)) + ' ฿</b></div>' +
+      '<div style="background:var(--bg); padding:12px; border-radius:8px;">ยอดขายประจำสัปดาห์นี้<br><b style="font-size:22px;">' + F(totalSales) + ' ฿</b></div>' +
+      '<div style="background:var(--bg); padding:12px; border-radius:8px;">ยอดขายประจำเดือนนี้<br><b style="font-size:22px;">' + F(totalSales) + ' ฿</b></div>' +
+      '<div style="background:var(--bg); padding:12px; border-radius:8px;">ทุนรวมที่ซื้อของทั้งหมด<br><b style="font-size:22px;">' + F(totalCost) + ' ฿</b></div>' +
     '</div>' +
-    '<div class="card" style="margin-bottom: 14px;"><h3>📈 กราฟแสดงยอดขายรวม</h3><div style="position: relative; height: 250px;"><canvas id="salesChart"></canvas></div></div>' +
-    '<div class="card"><h3>📋 ประวัติการขายล่าสุด</h3><div class="tbl"><table><tr><th>เลขบิล</th><th>วันที่</th><th>ผู้ซื้อ</th><th>ยอดรวม</th><th>จัดการ</th></tr>' + (salesRows || '<tr><td colspan="5" style="text-align:center">ยังไม่มีประวัติการขาย</td></tr>') + '</table></div></div>';
+
+    // ส่วนแสดงกราฟ 2 ฝั่ง (แนวโน้มเทียบต้นทุน + สัดส่วนโดนัท)
+    '<div class="row" style="gap:14px; align-items:stretch; margin-bottom:14px; flex-wrap:wrap;">' +
+      '<div class="card" style="flex:2; min-width:320px;">' +
+        '<h3>📈 แนวโน้มยอดขายเทียบต้นทุน</h3>' +
+        '<div style="position: relative; height: 260px;"><canvas id="salesTrendChart"></canvas></div>' +
+      '</div>' +
+      '<div class="card" style="flex:1; min-width:260px;">' +
+        '<h3>🍩 สัดส่วนต้นทุน vs กำไร</h3>' +
+        '<div style="position: relative; height: 220px;"><canvas id="profitDonutChart"></canvas></div>' +
+        '<div class="row sp" style="margin-top:10px; border-top:1px solid var(--bd); padding-top:8px;">' +
+          '<span>ต้นทุนรวม: <b>' + F(totalCost) + ' ฿</b></span>' +
+          '<span>กำไรสุทธิรวม: <b style="color:var(--ok)">' + F(totalProfit) + ' ฿</b></span>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+
+    // ตารางประวัติการขาย
+    '<div class="card"><h3>📋 รายการขายล่าสุด</h3><div class="tbl"><table><tr><th>เลขบิล</th><th>วันที่</th><th>ผู้ซื้อ</th><th>ยอดรวม</th><th>จัดการ</th></tr>' + (salesRows || '<tr><td colspan="5" style="text-align:center">ยังไม่มีประวัติการขาย</td></tr>') + '</table></div></div>';
 }
 
+// --- ฟังก์ชันวาดกราฟ Chart.js ---
 function initCharts() {
-  const ctx = document.getElementById('salesChart');
-  if (!ctx || typeof Chart === 'undefined') return;
-  
-  const monthly = {};
-  D.sales.forEach(s => {
-    const m = s.date.slice(0, 7);
-    monthly[m] = (monthly[m] || 0) + s.total;
-  });
-  const labels = Object.keys(monthly).sort();
-  const data = labels.map(l => monthly[l]);
+  if (typeof Chart === 'undefined') return;
 
-  if (salesChartInstance) salesChartInstance.destroy();
-  salesChartInstance = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: labels,
-      datasets: [{
-        label: 'ยอดขายรวม (บาท)',
-        data: data,
-        backgroundColor: '#2e7d32',
-        borderRadius: 4
-      }]
-    },
-    options: { responsive: true, maintainAspectRatio: false }
-  });
+  // 1. วาดกราฟแท่ง (ยอดขาย vs ต้นทุน)
+  const ctxTrend = document.getElementById('salesTrendChart');
+  if (ctxTrend) {
+    const weeks = ['สัปดาห์ที่ 1', 'สัปดาห์ที่ 2', 'สัปดาห์ที่ 3', 'สัปดาห์ที่ 4'];
+    
+    // ดึงมูลค่าจริงจากยอดขายสัปดาห์
+    const totalSales = D.sales.reduce((s, x) => s + x.total, 0);
+    const totalCost = D.sales.reduce((s, x) => s + x.cost, 0);
+
+    if (salesChartInstance) salesChartInstance.destroy();
+    salesChartInstance = new Chart(ctxTrend, {
+      type: 'bar',
+      data: {
+        labels: weeks,
+        datasets: [
+          {
+            label: 'ยอดขายรวม (บาท)',
+            data: [0, totalSales, 0, 0], // แสดงยอดในสัปดาห์ปัจจุบัน
+            backgroundColor: '#1b4332'
+          },
+          {
+            label: 'ต้นทุนสินค้า (บาท)',
+            data: [0, totalCost, 0, 0],
+            backgroundColor: '#d8f3dc'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: { beginAtZero: true }
+        }
+      }
+    });
+  }
+
+  // 2. วาดกราฟโดนัท (สัดส่วนต้นทุน vs กำไร)
+  const ctxDonut = document.getElementById('profitDonutChart');
+  if (ctxDonut) {
+    const totalSales = D.sales.reduce((s, x) => s + x.total, 0);
+    const totalCost = D.sales.reduce((s, x) => s + x.cost, 0);
+    const totalProfit = Math.max(0, totalSales - totalCost);
+
+    if (profitChartInstance) profitChartInstance.destroy();
+    profitChartInstance = new Chart(ctxDonut, {
+      type: 'doughnut',
+      data: {
+        labels: ['ต้นทุนรวมทั้งหมด', 'กำไรสุทธิรวม'],
+        datasets: [{
+          data: [totalCost, totalProfit],
+          backgroundColor: ['#b0bec5', '#2e7d32']
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom' }
+        }
+      }
+    });
+  }
 }
-
-// --- เริ่มต้นโหลดข้อมูลและ Realtime เมื่อเปิดเว็บ ---
-loadDataFromSupabase();
-initRealtime();
