@@ -816,3 +816,8 @@ function exportReportExcel() {
 function initCharts() {
   // ฟังก์ชันรองรับการวาดกราฟถ้ามี
 }
+// --- สั่งเริ่มทำงานเมื่อเปิดหน้าเว็บ ---
+document.addEventListener('DOMContentLoaded', () => {
+  loadDataFromSupabase();
+  initRealtime();
+});
