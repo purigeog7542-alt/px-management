@@ -37,7 +37,7 @@
       box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
     header h1 { margin: 0; font-size: 20px; }
-    .header-btns { display: flex; gap: 10px; }
+    .header-btns { display: flex; gap: 10px; flex-wrap: wrap; }
     .btn {
       background: white;
       color: var(--primary);
@@ -50,7 +50,31 @@
       transition: 0.2s;
     }
     .btn:hover { background: #e0e0e0; }
-    
+    .btn.active { background: #52b788; color: white; }
+
+    /* Filter Bar */
+    .filter-bar {
+      background: var(--card-bg);
+      padding: 12px 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      border: 1px solid var(--border);
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .filter-group { display: flex; gap: 8px; align-items: center; }
+    .filter-group select, .filter-group input {
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      font-size: 14px;
+    }
+
+    /* Grid KPI Cards */
     .grid-kpi {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -109,7 +133,7 @@
     .chart-header h3 { margin: 0; font-size: 16px; }
 
     @media print {
-      .header-btns { display: none; }
+      .header-btns, .filter-bar { display: none; }
       body { background: white; padding: 0; }
     }
   </style>
@@ -119,10 +143,26 @@
   <header>
     <h1>📊 แดชบอร์ดวิเคราะห์ยอดขาย & สวัสดิการ</h1>
     <div class="header-btns">
-      <button class="btn" onclick="window.print()">🖨 พิมพ์ PDF / รายงาน</button>
+      <button class="btn" onclick="exportDashboardCSV()">📥 Export Excel (CSV)</button>
+      <button class="btn" onclick="window.print()">🖨 พิมพ์ PDF</button>
       <a href="index.html" class="btn">⬅ กลับหน้าขายสินค้า</a>
     </div>
   </header>
+
+  <!-- ฟังก์ชันตัวกรองช่วงเวลา (Date Range / Preset Filter) -->
+  <div class="filter-bar">
+    <div class="filter-group">
+      <b>📅 ช่วงเวลา:</b>
+      <button class="btn active" id="btn-today" onclick="setFilter('today')">วันนี้</button>
+      <button class="btn" id="btn-week" onclick="setFilter('week')">7 วันล่าสุด</button>
+      <button class="btn" id="btn-month" onclick="setFilter('month')">เดือนนี้</button>
+      <button class="btn" id="btn-all" onclick="setFilter('all')">ทั้งหมด</button>
+    </div>
+    <div class="filter-group">
+      <span>ตั้งแต่: <input type="date" id="startDate" onchange="customFilter()"></span>
+      <span>ถึง: <input type="date" id="endDate" onchange="customFilter()"></span>
+    </div>
+  </div>
 
   <!-- 1. การ์ดสรุปยอดขายแบบแยกช่วงเวลา (KPIs) -->
   <div class="grid-kpi">
@@ -143,7 +183,7 @@
     </div>
     <div class="kpi-card">
       <div class="title">อัตรากำไรจากต้นทุน (MARKUP)</div>
-      <div class="value" id="markupRate" style="color: #2a9d8f;">0 %</div>
+      <div class="value" id="markupRate" style="color: #2a9d8f;">69.2 %</div>
       <div class="sub-text">อัตรากำไรสุทธิเทียบต้นทุน</div>
     </div>
   </div>
@@ -173,7 +213,7 @@
   <div class="grid-charts">
     <div class="chart-container">
       <div class="chart-header">
-        <h3>📈 แนวโน้มยอดขายเทียบต้นทุน (รายวัน)</h3>
+        <h3>📈 แนวโน้มยอดขายเทียบต้นทุน</h3>
       </div>
       <canvas id="salesCostBarChart"></canvas>
     </div>
@@ -187,7 +227,7 @@
 
     <div class="chart-container" style="grid-column: span 2;">
       <div class="chart-header">
-        <h3>🍕 สัดส่วนยอดขายตามสินค้า (สินค้าขายดี)</h3>
+        <h3>🍕 สัดส่วนยอดขายตามสินค้า (สินค้าขายดีตามช่วงเวลา)</h3>
       </div>
       <canvas id="topProductsChart"></canvas>
     </div>
@@ -205,6 +245,7 @@
       return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
     };
 
+    let globalData = { products: [], transactions: [], items: [], restocks: [], members: [], payments: [] };
     let salesCostChartInstance = null;
     let costProfitChartInstance = null;
     let topProductsChartInstance = null;
@@ -223,71 +264,23 @@
         if (pRes.error) throw pRes.error;
         if (sRes.error) throw sRes.error;
 
-        const transactions = sRes.data || [];
-        const items = iRes.data || [];
-        const members = mRes.data || [];
-        const payments = payRes.data || [];
+        globalData.products = pRes.data || [];
+        globalData.transactions = sRes.data || [];
+        globalData.items = iRes.data || [];
+        globalData.restocks = rRes.data || [];
+        globalData.members = mRes.data || [];
+        globalData.payments = payRes.data || [];
 
         // คำนวณยอดค้างชำระสมาชิก
         const bal = {};
-        members.forEach(c => bal[c.id] = +c.opening || 0);
-        transactions.forEach(s => { if (s.method === 'sign' && s.cust in bal) bal[s.cust] += Number(s.total) || 0; });
-        payments.forEach(y => { if (y.cust in bal) bal[y.cust] -= Number(y.amount) || 0; });
+        globalData.members.forEach(c => bal[c.id] = +c.opening || 0);
+        globalData.transactions.forEach(s => { if (s.method === 'sign' && s.cust in bal) bal[s.cust] += Number(s.total) || 0; });
+        globalData.payments.forEach(y => { if (y.cust in bal) bal[y.cust] -= Number(y.amount) || 0; });
         let totalCreditBalance = Object.values(bal).reduce((a, b) => a + b, 0);
-
-        const today = todayStr();
-        const currentMonth = today.slice(0, 7);
-        const now = new Date();
-        const sevenDaysAgo = new Date(now.setDate(now.getDate() - 7)).toISOString().slice(0, 10);
-
-        let dailySales = 0, dailyCost = 0;
-        let weeklySales = 0, weeklyCost = 0;
-        let monthlySales = 0, monthlyCost = 0;
-
-        const dailyMap = {}; 
-        const productSalesMap = {};
-
-        transactions.forEach(tx => {
-          const tSales = Number(tx.total) || 0;
-          const tCost = Number(tx.cost) || 0;
-          const d = tx.date;
-
-          if (d === today) { dailySales += tSales; dailyCost += tCost; }
-          if (d >= sevenDaysAgo) { weeklySales += tSales; weeklyCost += tCost; }
-          if (d && d.startsWith(currentMonth)) { monthlySales += tSales; monthlyCost += tCost; }
-
-          if (d) {
-            if (!dailyMap[d]) dailyMap[d] = { sales: 0, cost: 0 };
-            dailyMap[d].sales += tSales;
-            dailyMap[d].cost += tCost;
-          }
-        });
-
-        items.forEach(item => {
-          const prodName = item.name || 'อื่นๆ';
-          const subTotal = (Number(item.qty) || 0) * (Number(item.unit_price) || 0);
-          productSalesMap[prodName] = (productSalesMap[prodName] || 0) + subTotal;
-        });
-
-        const dailyProfit = dailySales - dailyCost;
-        const weeklyProfit = weeklySales - weeklyCost;
-        const monthlyProfit = monthlySales - monthlyCost;
-
-        // อัปเดต UI KPIs
-        document.getElementById('dailySales').textContent = F(dailySales) + ' ฿';
-        document.getElementById('dailyProfit').textContent = 'กำไรวันนี้: ' + F(dailyProfit) + ' ฿';
-        document.getElementById('weeklySales').textContent = F(weeklySales) + ' ฿';
-        document.getElementById('weeklyProfit').textContent = 'กำไรสัปดาห์นี้: ' + F(weeklyProfit) + ' ฿';
-        document.getElementById('monthlySales').textContent = F(monthlySales) + ' ฿';
-        document.getElementById('monthlyProfit').textContent = 'กำไรเดือนนี้: ' + F(monthlyProfit) + ' ฿';
-        document.getElementById('markupRate').textContent = '69.2 %'; // คำนวณจากกำไรเป้าหมาย 7,529 / ต้นทุน 10,879
-
         document.getElementById('totalCreditBalance').textContent = F(totalCreditBalance) + ' ฿';
 
-        // วาดกราฟ
-        renderSalesCostChart(dailyMap);
-        renderCostProfitChart(10879, 7529); // ใช้ตัวเลขรวมเป้าหมายตู้
-        renderTopProductsChart(productSalesMap);
+        // ตั้งค่าเริ่มต้นฟิลเตอร์เป็น "วันนี้" หรือ "ทั้งหมดที่มีความเคลื่อนไหว"
+        setFilter('all');
 
       } catch (err) {
         console.error('Error loading dashboard:', err);
@@ -295,8 +288,98 @@
       }
     }
 
+    function setFilter(type) {
+      document.querySelectorAll('.filter-group .btn').forEach(b => b.classList.remove('active'));
+      const btn = document.getElementById('btn-' + type);
+      if (btn) btn.classList.add('active');
+
+      const today = todayStr();
+      const now = new Date();
+      let start = '', end = today;
+
+      if (type === 'today') {
+        start = today;
+      } else if (type === 'week') {
+        const d = new Date(now.setDate(now.getDate() - 7));
+        start = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+      } else if (type === 'month') {
+        start = today.slice(0, 8) + '01';
+      } else if (type === 'all') {
+        start = '2020-01-01';
+      }
+
+      document.getElementById('startDate').value = start;
+      document.getElementById('endDate').value = end;
+      processAndRender(start, end);
+    }
+
+    function customFilter() {
+      document.querySelectorAll('.filter-group .btn').forEach(b => b.classList.remove('active'));
+      const start = document.getElementById('startDate').value;
+      const end = document.getElementById('endDate').value;
+      if (start && end) processAndRender(start, end);
+    }
+
+    function processAndRender(startDate, endDate) {
+      const transactions = globalData.transactions;
+      const items = globalData.items;
+
+      const today = todayStr();
+      const currentMonth = today.slice(0, 7);
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.setDate(now.getDate() - 7)).toISOString().slice(0, 10);
+
+      let dailySales = 0, dailyCost = 0;
+      let weeklySales = 0, weeklyCost = 0;
+      let monthlySales = 0, monthlyCost = 0;
+
+      const dailyMap = {}; 
+      const productSalesMap = {};
+
+      transactions.forEach(tx => {
+        const tSales = Number(tx.total) || 0;
+        const tCost = Number(tx.cost) || 0;
+        const d = tx.date;
+
+        // KPI คำนวณแบบส Fixed ช่วงเวลาปัจจุบัน
+        if (d === today) { dailySales += tSales; dailyCost += tCost; }
+        if (d >= sevenDaysAgo) { weeklySales += tSales; weeklyCost += tCost; }
+        if (d && d.startsWith(currentMonth)) { monthlySales += tSales; monthlyCost += tCost; }
+
+        // กรองตาม Date Range ที่เลือกสำหรับกราฟ
+        if (d && d >= startDate && d <= endDate) {
+          if (!dailyMap[d]) dailyMap[d] = { sales: 0, cost: 0 };
+          dailyMap[d].sales += tSales;
+          dailyMap[d].cost += tCost;
+        }
+      });
+
+      // กรองสินค้าขายดีตามช่วงเวลา
+      const filteredTxIds = new Set(transactions.filter(tx => tx.date >= startDate && tx.date <= endDate).map(tx => tx.id));
+      items.forEach(item => {
+        if (filteredTxIds.size === 0 || filteredTxIds.has(item.transaction_id)) {
+          const prodName = item.name || 'อื่นๆ';
+          const subTotal = (Number(item.qty) || 0) * (Number(item.unit_price) || 0);
+          productSalesMap[prodName] = (productSalesMap[prodName] || 0) + subTotal;
+        }
+      });
+
+      // อัปเดต UI KPIs
+      document.getElementById('dailySales').textContent = F(dailySales) + ' ฿';
+      document.getElementById('dailyProfit').textContent = 'กำไรวันนี้: ' + F(dailySales - dailyCost) + ' ฿';
+      document.getElementById('weeklySales').textContent = F(weeklySales) + ' ฿';
+      document.getElementById('weeklyProfit').textContent = 'กำไรสัปดาห์นี้: ' + F(weeklySales - weeklyCost) + ' ฿';
+      document.getElementById('monthlySales').textContent = F(monthlySales) + ' ฿';
+      document.getElementById('monthlyProfit').textContent = 'กำไรเดือนนี้: ' + F(monthlySales - monthlyCost) + ' ฿';
+
+      // วาดกราฟ
+      renderSalesCostChart(dailyMap);
+      renderCostProfitChart(10879, 7529);
+      renderTopProductsChart(productSalesMap);
+    }
+
     function renderSalesCostChart(dailyMap) {
-      const dates = Object.keys(dailyMap).sort().slice(-10);
+      const dates = Object.keys(dailyMap).sort();
       const salesData = dates.map(d => dailyMap[d].sales);
       const costData = dates.map(d => dailyMap[d].cost);
 
@@ -346,6 +429,27 @@
         },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
       });
+    }
+
+    function exportDashboardCSV() {
+      let rows = [['วันที่', 'ยอดขายรวม (บาท)', 'ต้นทุนรวม (บาท)', 'กำไรสุทธิ (บาท)']];
+      const start = document.getElementById('startDate').value;
+      const end = document.getElementById('endDate').value;
+
+      globalData.transactions.forEach(tx => {
+        if (tx.date >= start && tx.date <= end) {
+          rows.push([tx.date, tx.total, tx.cost, (Number(tx.total) - Number(tx.cost))]);
+        }
+      });
+
+      let csv = '\uFEFF' + rows.map(r => r.join(',')).join('\n');
+      let blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      let link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute('download', 'dashboard_report_' + todayStr() + '.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
 
     document.addEventListener('DOMContentLoaded', loadDashboardData);
