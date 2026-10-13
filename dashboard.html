@@ -3,17 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>แดชบอร์ดรายงาน - ร้านสวัสดิการทหารม้า</title>
-  <!-- โหลด Supabase และ Chart.js จาก CDN -->
+  <title>วิเคราะห์ยอดขาย & แดชบอร์ดสวัสดิการ</title>
+  <!-- CDN Supabase & Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {
       --primary: #1b4332;
+      --primary-light: #2d6a4f;
       --bg: #f4f6f5;
       --card-bg: #ffffff;
       --text: #333333;
       --border: #d8dedb;
+      --accent: #2d6a4f;
+      --danger: #d90429;
     }
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -26,121 +29,184 @@
       background-color: var(--primary);
       color: white;
       padding: 15px 20px;
-      border-radius: 8px;
+      border-radius: 10px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 20px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
-    header h1 {
-      margin: 0;
-      font-size: 20px;
-    }
+    header h1 { margin: 0; font-size: 20px; }
     .btn {
       background: white;
       color: var(--primary);
       border: none;
       padding: 8px 16px;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
       font-weight: bold;
       text-decoration: none;
+      transition: 0.2s;
     }
-    .grid-cards {
+    .btn:hover { background: #e0e0e0; }
+    
+    /* Grid KPI Cards */
+    .grid-kpi {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 15px;
       margin-bottom: 20px;
     }
-    .card {
+    .kpi-card {
+      background: var(--card-bg);
+      padding: 18px;
+      border-radius: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      border: 1px solid var(--border);
+      position: relative;
+    }
+    .kpi-card .title { font-size: 13px; color: #666; margin-bottom: 6px; font-weight: 600; }
+    .kpi-card .value { font-size: 24px; font-weight: bold; color: var(--primary); }
+    .kpi-card .sub-text { font-size: 12px; color: #2a9d8f; margin-top: 6px; font-weight: 500; }
+
+    /* Summary Card Section */
+    .summary-card {
       background: var(--card-bg);
       padding: 20px;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      border-radius: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
       border: 1px solid var(--border);
+      margin-bottom: 20px;
     }
-    .card .title {
-      font-size: 14px;
-      color: #666;
-      margin-bottom: 8px;
+    .summary-card h3 { margin-top: 0; font-size: 16px; color: var(--primary); }
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px dashed var(--border);
+      font-size: 15px;
     }
-    .card .value {
-      font-size: 24px;
-      font-weight: bold;
-      color: var(--primary);
-    }
+    .summary-row:last-child { border-bottom: none; }
+
+    /* Grid Charts Section */
     .grid-charts {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
       gap: 20px;
     }
     .chart-container {
       background: var(--card-bg);
       padding: 20px;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      border-radius: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
       border: 1px solid var(--border);
       position: relative;
-      height: 350px;
+      height: 360px;
     }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    .chart-header h3 { margin: 0; font-size: 16px; }
   </style>
 </head>
 <body>
 
   <header>
-    <h1>📊 แดชบอร์ดวิเคราะห์ยอดขายและสวัสดิการ</h1>
+    <h1>📊 แดชบอร์ดวิเคราะห์ยอดขาย & สวัสดิการ</h1>
     <a href="index.html" class="btn">⬅ กลับหน้าขายสินค้า</a>
   </header>
 
-  <!-- สรุปตัวเลขสำคัญ -->
-  <div class="grid-cards">
-    <div class="card">
-      <div class="title">ยอดขายรวมทั้งหมด</div>
-      <div class="value" id="totalSales">0 ฿</div>
+  <!-- 1. การ์ดสรุปยอดขายแบบแยกช่วงเวลา (KPIs) -->
+  <div class="grid-kpi">
+    <div class="kpi-card">
+      <div class="title">ยอดขายประจำวัน</div>
+      <div class="value" id="dailySales">0 ฿</div>
+      <div class="sub-text" id="dailyProfit">กำไรวันนี้: 0 ฿</div>
     </div>
-    <div class="card">
-      <div class="title">กำไรสุทธิรวม</div>
-      <div class="value" id="totalProfit" style="color: #2d6a4f;">0 ฿</div>
+    <div class="kpi-card">
+      <div class="title">ยอดขายประจำสัปดาห์ (7 วันล่าสุด)</div>
+      <div class="value" id="weeklySales">0 ฿</div>
+      <div class="sub-text" id="weeklyProfit">กำไรสัปดาห์นี้: 0 ฿</div>
     </div>
-    <div class="card">
-      <div class="title">ทุนสินค้าทั้งหมด</div>
-      <div class="value" id="totalCost">0 ฿</div>
+    <div class="kpi-card">
+      <div class="title">ยอดขายประจำเดือนนี้</div>
+      <div class="value" id="monthlySales">0 ฿</div>
+      <div class="sub-text" id="monthlyProfit">กำไรเดือนนี้: 0 ฿</div>
     </div>
-    <div class="card">
-      <div class="title">จำนวนบิลขายทั้งหมด</div>
-      <div class="value" id="totalBills">0 บิล</div>
+    <div class="kpi-card">
+      <div class="title">อัตรากำไรจากต้นทุน (MARKUP)</div>
+      <div class="value" id="markupRate" style="color: #2a9d8f;">0 %</div>
+      <div class="sub-text">อัตรากำไรสุทธิเทียบต้นทุน</div>
     </div>
   </div>
 
-  <!-- ส่วนแสดงกราฟ -->
+  <!-- 2. สรุปต้นทุนรวมและมูลค่าสต็อก -->
+  <div class="summary-card">
+    <h3>📦 สรุปต้นทุน สต็อก และกำไรภาพรวม</h3>
+    <div class="summary-row">
+      <span>ต้นทุนสินค้าทั้งหมดที่ลงไป (รวมการรับของทั้งหมด):</span>
+      <b id="totalPurchasedCost" style="color: var(--danger);">0.00 ฿</b>
+    </div>
+    <div class="summary-row">
+      <span>กำไรสุทธิรวมทั้งหมด (ที่ขายได้แล้ว):</span>
+      <b id="totalProfitAll" style="color: #2d6a4f;">0.00 ฿</b>
+    </div>
+    <div class="summary-row">
+      <span>มูลค่าสินค้าคงเหลือในคลัง (ราคาต้นทุน):</span>
+      <b id="stockInventoryValue" style="color: #2a9d8f;">0.00 ฿</b>
+    </div>
+  </div>
+
+  <!-- 3. ส่วนแสดงกราฟเปรียบเทียบ -->
   <div class="grid-charts">
     <div class="chart-container">
-      <h3>ยอดขายรายวัน (กราฟแท่งแนวตั้ง)</h3>
-      <canvas id="barChart"></canvas>
+      <div class="chart-header">
+        <h3>📈 แนวโน้มยอดขายเทียบต้นทุน (รายวัน)</h3>
+      </div>
+      <canvas id="salesCostBarChart"></canvas>
     </div>
+
     <div class="chart-container">
-      <h3>สัดส่วนยอดขายตามสินค้า (กราฟวงกลม / Pie)</h3>
-      <canvas id="pieChart"></canvas>
+      <div class="chart-header">
+        <h3>🍩 สัดส่วนต้นทุน vs กำไรสุทธิรวม</h3>
+      </div>
+      <canvas id="costProfitPieChart"></canvas>
+    </div>
+
+    <div class="chart-container" style="grid-column: span 2;">
+      <div class="chart-header">
+        <h3>🍕 สัดส่วนยอดขายตามสินค้า (สินค้าขายดี)</h3>
+      </div>
+      <canvas id="topProductsChart"></canvas>
     </div>
   </div>
 
   <script>
-    // --- ตั้งค่าการเชื่อมต่อ Supabase (ใช้ค่าเดิมของคุณ) ---
     const SUPABASE_URL = 'https://wtyvtjvzvgurybtcnnsf.supabase.co'; 
     const SUPABASE_ANON_KEY = 'sb_publishable_JLPzS9fSB0-mJN9D3Vssiw_ibQEXq4d'; 
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    const F = n => (+n||0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
+    const F = n => (+n||0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const pad = n => String(n).padStart(2, '0');
+    const todayStr = () => {
+      const d = new Date();
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    };
 
-    let barChartInstance = null;
-    let pieChartInstance = null;
+    let salesCostChartInstance = null;
+    let costProfitChartInstance = null;
+    let topProductsChartInstance = null;
 
     async function loadDashboardData() {
       try {
-        const [pRes, sRes, iRes] = await Promise.all([
+        const [pRes, sRes, iRes, rRes] = await Promise.all([
           sb.from('products').select('*'),
           sb.from('transactions').select('*'),
-          sb.from('transaction_items').select('*')
+          sb.from('transaction_items').select('*'),
+          sb.from('restocks').select('*')
         ]);
 
         if (pRes.error) throw pRes.error;
@@ -149,109 +215,193 @@
         const products = pRes.data || [];
         const transactions = sRes.data || [];
         const items = iRes.data || [];
+        const restocks = rRes.data || [];
 
-        let totalSales = 0;
-        let totalCost = 0;
-        
-        // รวบรวมข้อมูลยอดขายรายวันสำหรับกราฟแท่ง
-        const dailySalesMap = {};
-        // รวบรวมข้อมูลยอดขายตามสินค้าสำหรับกราฟพาย
+        const today = todayStr();
+        const currentMonth = today.slice(0, 7); // YYYY-MM
+
+        // คำนวณวันที่ย้อนหลัง 7 วันสำหรับรายสัปดาห์
+        const now = new Date();
+        const sevenDaysAgo = new Date(now.setDate(now.getDate() - 7)).toISOString().slice(0, 10);
+
+        let dailySales = 0, dailyCost = 0;
+        let weeklySales = 0, weeklyCost = 0;
+        let monthlySales = 0, monthlyCost = 0;
+        let totalSalesAll = 0, totalCostAll = 0;
+
+        const dailyMap = {}; // { '2026-10-13': { sales: 0, cost: 0 } }
         const productSalesMap = {};
 
         transactions.forEach(tx => {
-          totalSales += Number(tx.total) || 0;
-          totalCost += Number(tx.cost) || 0;
-
-          // จัดกลุ่มตามวัน (date)
+          const tSales = Number(tx.total) || 0;
+          const tCost = Number(tx.cost) || 0;
           const d = tx.date;
+
+          totalSalesAll += tSales;
+          totalCostAll += tCost;
+
+          // รายวันปัจจุบัน
+          if (d === today) {
+            dailySales += tSales;
+            dailyCost += tCost;
+          }
+          // รายสัปดาห์ (7 วันล่าสุด)
+          if (d >= sevenDaysAgo) {
+            weeklySales += tSales;
+            weeklyCost += tCost;
+          }
+          // รายเดือน
+          if (d && d.startsWith(currentMonth)) {
+            monthlySales += tSales;
+            monthlyCost += tCost;
+          }
+
+          // จัดกลุ่มรายวันทำกราฟ
           if (d) {
-            dailySalesMap[d] = (dailySalesMap[d] || 0) + (Number(tx.total) || 0);
+            if (!dailyMap[d]) dailyMap[d] = { sales: 0, cost: 0 };
+            dailyMap[d].sales += tSales;
+            dailyMap[d].cost += tCost;
           }
         });
 
-        // คำนวณยอดขายแต่ละสินค้า
+        // คำนวณยอดขายตามสินค้า
         items.forEach(item => {
           const prodName = item.name || 'อื่นๆ';
           const subTotal = (Number(item.qty) || 0) * (Number(item.unit_price) || 0);
           productSalesMap[prodName] = (productSalesMap[prodName] || 0) + subTotal;
         });
 
-        const totalProfit = totalSales - totalCost;
+        // คำนวณต้นทุนรวมทั้งหมดที่เคยซื้อเข้า (Products Initial Cost + Restocks)
+        let totalPurchasedCost = 0;
+        products.forEach(p => totalPurchasedCost += Number(p.buy_cost) || 0);
+        restocks.forEach(r => totalPurchasedCost += Number(r.cost) || 0);
 
-        // อัปเดตตัวเลขการ์ดสรุป
-        document.getElementById('totalSales').textContent = F(totalSales) + ' ฿';
-        document.getElementById('totalProfit').textContent = F(totalProfit) + ' ฿';
-        document.getElementById('totalCost').textContent = F(totalCost) + ' ฿';
-        document.getElementById('totalBills').textContent = transactions.length + ' บิล';
+        // คำนวณมูลค่าสต็อกคงเหลือปัจจุบัน
+        let stockInventoryValue = 0;
+        products.forEach(p => {
+          const stockQty = Number(p.buy_qty) || 0;
+          const unitCost = stockQty > 0 ? (Number(p.buy_cost) / stockQty) : (Number(p.price) * 0.7);
+          stockInventoryValue += stockQty * unitCost;
+        });
 
-        // สร้างกราฟ
-        renderBarChart(dailySalesMap);
-        renderPieChart(productSalesMap);
+        const dailyProfit = dailySales - dailyCost;
+        const weeklyProfit = weeklySales - weeklyCost;
+        const monthlyProfit = monthlySales - monthlyCost;
+        const totalProfitAll = totalSalesAll - totalCostAll;
+        const markupRate = totalCostAll > 0 ? ((totalProfitAll / totalCostAll) * 100) : 0;
+
+        // อัปเดตการ์ด KPIs
+        document.getElementById('dailySales').textContent = F(dailySales) + ' ฿';
+        document.getElementById('dailyProfit').textContent = 'กำไรวันนี้: ' + F(dailyProfit) + ' ฿';
+
+        document.getElementById('weeklySales').textContent = F(weeklySales) + ' ฿';
+        document.getElementById('weeklyProfit').textContent = 'กำไรสัปดาห์นี้: ' + F(weeklyProfit) + ' ฿';
+
+        document.getElementById('monthlySales').textContent = F(monthlySales) + ' ฿';
+        document.getElementById('monthlyProfit').textContent = 'กำไรเดือนนี้: ' + F(monthlyProfit) + ' ฿';
+
+        document.getElementById('markupRate').textContent = F(markupRate) + ' %';
+
+        // อัปเดตการ์ดสรุปต้นทุน
+        document.getElementById('totalPurchasedCost').textContent = F(totalPurchasedCost) + ' ฿';
+        document.getElementById('totalProfitAll').textContent = F(totalProfitAll) + ' ฿';
+        document.getElementById('stockInventoryValue').textContent = F(stockInventoryValue) + ' ฿';
+
+        // วาดกราฟ
+        renderSalesCostChart(dailyMap);
+        renderCostProfitChart(totalCostAll, totalProfitAll);
+        renderTopProductsChart(productSalesMap);
 
       } catch (err) {
-        console.error('Error loading dashboard data:', err);
-        alert('โหลดข้อมูลแดชบอร์ดไม่สำเร็จ: ' + err.message);
+        console.error('Error loading dashboard:', err);
+        alert('เกิดข้อผิดพลาดในการโหลดข้อมูล: ' + err.message);
       }
     }
 
-    function renderBarChart(dailyMap) {
-      const sortedDates = Object.keys(dailyMap).sort();
-      const dataValues = sortedDates.map(date => dailyMap[date]);
+    // กราฟแท่งคู่ ยอดขาย vs ต้นทุน
+    function renderSalesCostChart(dailyMap) {
+      const dates = Object.keys(dailyMap).sort().slice(-10); // แสดง 10 วันล่าสุด
+      const salesData = dates.map(d => dailyMap[d].sales);
+      const costData = dates.map(d => dailyMap[d].cost);
 
-      const ctx = document.getElementById('barChart').getContext('2d');
-      if (barChartInstance) barChartInstance.destroy();
+      const ctx = document.getElementById('salesCostBarChart').getContext('2d');
+      if (salesCostChartInstance) salesCostChartInstance.destroy();
 
-      barChartInstance = new Chart(ctx, {
+      salesCostChartInstance = new Chart(ctx, {
         type: 'bar',
         data: {
-          labels: sortedDates,
+          labels: dates,
+          datasets: [
+            {
+              label: 'ยอดขาย (บาท)',
+              data: salesData,
+              backgroundColor: '#2d6a4f',
+              borderRadius: 4
+            },
+            {
+              label: 'ต้นทุนสินค้า (บาท)',
+              data: costData,
+              backgroundColor: '#adb5bd',
+              borderRadius: 4
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: { y: { beginAtZero: true } }
+        }
+      });
+    }
+
+    // กราฟวงกลม สัดส่วนต้นทุน vs กำไร
+    function renderCostProfitChart(totalCost, totalProfit) {
+      const ctx = document.getElementById('costProfitPieChart').getContext('2d');
+      if (costProfitChartInstance) costProfitChartInstance.destroy();
+
+      costProfitChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['ต้นทุนสินค้าขาย', 'กำไรสุทธิ'],
           datasets: [{
-            label: 'ยอดขาย (บาท)',
-            data: dataValues,
-            backgroundColor: '#2d6a4f',
-            borderRadius: 4
+            data: [totalCost, totalProfit],
+            backgroundColor: ['#adb5bd', '#2d6a4f']
           }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            y: { beginAtZero: true }
-          }
+          plugins: { legend: { position: 'bottom' } }
         }
       });
     }
 
-    function renderPieChart(prodMap) {
-      // เรียงลำดับสินค้าขายดี และดึงมาแค่ 6 อันดับแรกเพื่อไม่ให้กราฟแน่นเกินไป
-      const sortedProds = Object.entries(prodMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
-      const labels = sortedProds.map(item => item[0]);
-      const data = sortedProds.map(item => item[1]);
+    // กราฟสินค้าขายดี
+    function renderTopProductsChart(prodMap) {
+      const sortedProds = Object.entries(prodMap).sort((a,b) => b[1] - a[1]).slice(0, 7);
+      const labels = sortedProds.map(i => i[0]);
+      const data = sortedProds.map(i => i[1]);
 
-      const ctx = document.getElementById('pieChart').getContext('2d');
-      if (pieChartInstance) pieChartInstance.destroy();
+      const ctx = document.getElementById('topProductsChart').getContext('2d');
+      if (topProductsChartInstance) topProductsChartInstance.destroy();
 
-      pieChartInstance = new Chart(ctx, {
+      topProductsChartInstance = new Chart(ctx, {
         type: 'pie',
         data: {
           labels: labels,
           datasets: [{
             data: data,
-            backgroundColor: ['#1b4332', '#2d6a4f', '#40916c', '#52b788', '#74c69d', '#95d5b2']
+            backgroundColor: ['#1b4332', '#2d6a4f', '#40916c', '#52b788', '#74c69d', '#95d5b2', '#b7e4c7']
           }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'bottom' }
-          }
+          plugins: { legend: { position: 'bottom' } }
         }
       });
     }
 
-    // เริ่มโหลดข้อมูลทันทีเมื่อเปิดหน้า dashboard.html
     document.addEventListener('DOMContentLoaded', loadDashboardData);
   </script>
 </body>
