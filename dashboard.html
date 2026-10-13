@@ -66,7 +66,7 @@
       flex-wrap: wrap;
       gap: 10px;
     }
-    .filter-group { display: flex; gap: 8px; align-items: center; }
+    .filter-group { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .filter-group select, .filter-group input {
       padding: 6px 10px;
       border-radius: 6px;
@@ -149,14 +149,14 @@
     </div>
   </header>
 
-  <!-- ฟังก์ชันตัวกรองช่วงเวลา (Date Range / Preset Filter) -->
+  <!-- ฟังก์ชันตัวกรองช่วงเวลา -->
   <div class="filter-bar">
     <div class="filter-group">
       <b>📅 ช่วงเวลา:</b>
-      <button class="btn active" id="btn-today" onclick="setFilter('today')">วันนี้</button>
+      <button class="btn" id="btn-today" onclick="setFilter('today')">วันนี้</button>
       <button class="btn" id="btn-week" onclick="setFilter('week')">7 วันล่าสุด</button>
       <button class="btn" id="btn-month" onclick="setFilter('month')">เดือนนี้</button>
-      <button class="btn" id="btn-all" onclick="setFilter('all')">ทั้งหมด</button>
+      <button class="btn active" id="btn-all" onclick="setFilter('all')">ทั้งหมด</button>
     </div>
     <div class="filter-group">
       <span>ตั้งแต่: <input type="date" id="startDate" onchange="customFilter()"></span>
@@ -167,14 +167,14 @@
   <!-- 1. การ์ดสรุปยอดขายแบบแยกช่วงเวลา (KPIs) -->
   <div class="grid-kpi">
     <div class="kpi-card">
-      <div class="title">ยอดขายประจำวัน</div>
-      <div class="value" id="dailySales">0 ฿</div>
-      <div class="sub-text" id="dailyProfit">กำไรวันนี้: 0 ฿</div>
+      <div class="title" id="lbl-sales-title">ยอดขายรวมช่วงที่เลือก</div>
+      <div class="value" id="rangeSales">0 ฿</div>
+      <div class="sub-text" id="rangeProfit">กำไรสุทธิ: 0 ฿</div>
     </div>
     <div class="kpi-card">
-      <div class="title">ยอดขายประจำสัปดาห์ (7 วันล่าสุด)</div>
-      <div class="value" id="weeklySales">0 ฿</div>
-      <div class="sub-text" id="weeklyProfit">กำไรสัปดาห์นี้: 0 ฿</div>
+      <div class="title">ยอดขายประจำวัน (วันนี้)</div>
+      <div class="value" id="dailySales">0 ฿</div>
+      <div class="sub-text" id="dailyProfit">กำไรวันนี้: 0 ฿</div>
     </div>
     <div class="kpi-card">
       <div class="title">ยอดขายประจำเดือนนี้</div>
@@ -197,7 +197,7 @@
     </div>
     <div class="summary-row">
       <span>ต้นทุนสินค้าทั้งหมดที่ลงไปตามตู้ (รวมทุกล็อต):</span>
-      <b id="totalPurchasedCost" style="color: var(--danger);">10,879.00 ฿</b>
+      <b style="color: var(--danger);">10,879.00 ฿</b>
     </div>
     <div class="summary-row">
       <span>ยอดขายรวมเป้าหมาย (หากขายหมดตู้ 1,122 ชิ้น):</span>
@@ -279,7 +279,6 @@
         let totalCreditBalance = Object.values(bal).reduce((a, b) => a + b, 0);
         document.getElementById('totalCreditBalance').textContent = F(totalCreditBalance) + ' ฿';
 
-        // ตั้งค่าเริ่มต้นฟิลเตอร์เป็น "วันนี้" หรือ "ทั้งหมดที่มีความเคลื่อนไหว"
         setFilter('all');
 
       } catch (err) {
@@ -300,7 +299,8 @@
       if (type === 'today') {
         start = today;
       } else if (type === 'week') {
-        const d = new Date(now.setDate(now.getDate() - 7));
+        const d = new Date(now);
+        d.setDate(d.getDate() - 7);
         start = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
       } else if (type === 'month') {
         start = today.slice(0, 8) + '01';
@@ -326,11 +326,9 @@
 
       const today = todayStr();
       const currentMonth = today.slice(0, 7);
-      const now = new Date();
-      const sevenDaysAgo = new Date(now.setDate(now.getDate() - 7)).toISOString().slice(0, 10);
 
+      let rangeSales = 0, rangeCost = 0;
       let dailySales = 0, dailyCost = 0;
-      let weeklySales = 0, weeklyCost = 0;
       let monthlySales = 0, monthlyCost = 0;
 
       const dailyMap = {}; 
@@ -341,13 +339,16 @@
         const tCost = Number(tx.cost) || 0;
         const d = tx.date;
 
-        // KPI คำนวณแบบส Fixed ช่วงเวลาปัจจุบัน
+        // คำนวณประจำวัน (เฉพาะวันนี้)
         if (d === today) { dailySales += tSales; dailyCost += tCost; }
-        if (d >= sevenDaysAgo) { weeklySales += tSales; weeklyCost += tCost; }
+        // คำนวณประจำเดือนนี้
         if (d && d.startsWith(currentMonth)) { monthlySales += tSales; monthlyCost += tCost; }
 
-        // กรองตาม Date Range ที่เลือกสำหรับกราฟ
+        // คำนวณตามช่วงเวลาที่เลือก (Range)
         if (d && d >= startDate && d <= endDate) {
+          rangeSales += tSales;
+          rangeCost += tCost;
+
           if (!dailyMap[d]) dailyMap[d] = { sales: 0, cost: 0 };
           dailyMap[d].sales += tSales;
           dailyMap[d].cost += tCost;
@@ -364,11 +365,13 @@
         }
       });
 
-      // อัปเดต UI KPIs
+      // อัปเดต UI KPIs ให้สัมพันธ์กัน
+      document.getElementById('rangeSales').textContent = F(rangeSales) + ' ฿';
+      document.getElementById('rangeProfit').textContent = 'กำไรสุทธิ: ' + F(rangeSales - rangeCost) + ' ฿';
+
       document.getElementById('dailySales').textContent = F(dailySales) + ' ฿';
       document.getElementById('dailyProfit').textContent = 'กำไรวันนี้: ' + F(dailySales - dailyCost) + ' ฿';
-      document.getElementById('weeklySales').textContent = F(weeklySales) + ' ฿';
-      document.getElementById('weeklyProfit').textContent = 'กำไรสัปดาห์นี้: ' + F(weeklySales - weeklyCost) + ' ฿';
+
       document.getElementById('monthlySales').textContent = F(monthlySales) + ' ฿';
       document.getElementById('monthlyProfit').textContent = 'กำไรเดือนนี้: ' + F(monthlySales - monthlyCost) + ' ฿';
 
