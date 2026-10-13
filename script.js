@@ -673,7 +673,7 @@ function stmt(id) {
   win.print();
 }
 
-// --- ฟังก์ชันวิเคราะห์และประมวลผลรายงาน (รองรับการแบ่ง 4 สัปดาห์ & สรุปการลงทุน) ---
+// --- ฟังก์ชันวิเคราะห์และประมวลผลรายงาน (เวอร์ชันสมบูรณ์) ---
 function renderReports() {
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -689,13 +689,18 @@ function renderReports() {
   let weeklyProfit = 0;
   let monthlyProfit = 0;
 
+  // เก็บข้อมูลแยกตามสัปดาห์ (1 เดือนแบ่งเป็น 4 สัปดาห์)
   const weeklyData = { 
     1: { sales: 0, cost: 0, profit: 0, label: 'สัปดาห์ที่ 1 (วันที่ 1-7)' }, 
     2: { sales: 0, cost: 0, profit: 0, label: 'สัปดาห์ที่ 2 (วันที่ 8-14)' }, 
     3: { sales: 0, cost: 0, profit: 0, label: 'สัปดาห์ที่ 3 (วันที่ 15-21)' }, 
     4: { sales: 0, cost: 0, profit: 0, label: 'สัปดาห์ที่ 4 (วันที่ 22 เป็นต้นไป)' } 
   };
+
+  // เก็บยอดขายแยกตามวันในสัปดาห์นี้
+  const dailyBreakdown = {};
   
+  // คำนวณทุนรวมที่ซื้อของทั้งหมด
   let totalInvestmentCost = 0;
   D.products.forEach(p => {
     let pCost = Number(p.buy_cost) || 0;
@@ -741,6 +746,14 @@ function renderReports() {
       weeklyData[weekNum].sales += sRevenue;
       weeklyData[weekNum].cost += sCost;
       weeklyData[weekNum].profit += sProfit;
+
+      // บันทึกย่อยรายวันสำหรับเดือนปัจจุบัน
+      if (!dailyBreakdown[saleDateStr]) {
+        dailyBreakdown[saleDateStr] = { sales: 0, cost: 0, profit: 0, date: saleDateStr };
+      }
+      dailyBreakdown[saleDateStr].sales += sRevenue;
+      dailyBreakdown[saleDateStr].cost += sCost;
+      dailyBreakdown[saleDateStr].profit += sProfit;
     }
   });
 
@@ -761,7 +774,8 @@ function renderReports() {
     weeklyProfit,
     monthlySales,
     monthlyProfit,
-    weeklyData
+    weeklyData,
+    dailyBreakdown
   };
 }
 
@@ -770,11 +784,33 @@ function vRep() {
   const r = renderReports();
   const netCashAfterProfit = r.totalSalesAll - r.totalProfitAll;
 
+  // รายละเอียด 4 สัปดาห์
   let weeklyRows = '';
   Object.keys(r.weeklyData).forEach(wKey => {
     const w = r.weeklyData[wKey];
-    weeklyRows += '<div class="row sp" style="margin:6px 0;padding:6px 0;border-bottom:1px solid var(--bd)"><span class="mu">' + w.label + '</span><span>ยอดขาย: <b>' + F(w.sales) + ' ฿</b> · กำไร: <b style="color:var(--pr)">' + F(w.profit) + ' ฿</b></span></div>';
+    weeklyRows += '<div class="row sp" style="margin:6px 0;padding:6px 0;border-bottom:1px solid var(--bd)">' +
+      '<div><span class="mu">' + w.label + '</span></div>' +
+      '<div style="text-align:right">ยอดขาย: <b>' + F(w.sales) + ' ฿</b> | ทุน: <b>' + F(w.cost) + ' ฿</b> | กำไร: <b style="color:var(--pr)">' + F(w.profit) + ' ฿</b></div>' +
+    '</div>';
   });
+
+  // รายละเอียดสรุปยอดรายวันในเดือนนี้
+  let dailyRows = '';
+  const sortedDates = Object.keys(r.dailyBreakdown).sort().reverse().slice(0, 7); // 7 วันล่าสุด
+  sortedDates.forEach(dStr => {
+    const d = r.dailyBreakdown[dStr];
+    const dateObj = new Date(dStr);
+    const dayName = dateObj.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' });
+    const isSunday = dateObj.getDay() === 0;
+    
+    dailyRows += '<tr>' +
+      '<td><b>' + dayName + '</b>' + (isSunday ? ' <span class="tag g">ตัดรอบสัปดาห์</span>' : '') + '</td>' +
+      '<td style="text-align:right">' + F(d.sales) + ' ฿</td>' +
+      '<td style="text-align:right">' + F(d.cost) + ' ฿</td>' +
+      '<td style="text-align:right;color:var(--pr);font-weight:bold">' + F(d.profit) + ' ฿</td>' +
+    '</tr>';
+  });
+  if (!dailyRows) dailyRows = '<tr><td colspan="4" style="text-align:center" class="mu">ยังไม่มีข้อมูลยอดขายรายวันในเดือนนี้</td></tr>';
 
   return '<div class="row sp" style="margin-bottom:12px">' +
     '<h2>📊 วิเคราะห์ยอดขาย & รายงานสวัสดิการ</h2>' +
@@ -783,6 +819,7 @@ function vRep() {
       '<button class="btn sm" onclick="window.print()">🖨 พิมพ์ PDF / รายงาน</button>' +
     '</div></div>' +
     
+    // การ์ดสรุปยอดหลัก 4 ช่อง
     '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:16px">' +
       '<div class="card"><div class="mu">ยอดขายประจำวัน</div><div style="font-size:24px;font-weight:bold;color:var(--pr)">' + F(r.dailySales) + ' ฿</div><div class="mu" style="margin-top:4px">กำไรวันนี้: <b>' + F(r.dailyProfit) + ' ฿</b></div></div>' +
       '<div class="card"><div class="mu">ยอดขายประจำสัปดาห์นี้</div><div style="font-size:24px;font-weight:bold;color:var(--pr)">' + F(r.weeklySales) + ' ฿</div><div class="mu" style="margin-top:4px">กำไรสัปดาห์นี้: <b>' + F(r.weeklyProfit) + ' ฿</b></div></div>' +
@@ -790,27 +827,29 @@ function vRep() {
       '<div class="card"><div class="mu">ทุนรวมที่ซื้อของทั้งหมด</div><div style="font-size:24px;font-weight:bold">' + F(r.totalInvestmentCost) + ' ฿</div><div class="mu" style="margin-top:4px">ยอดขายรวมทั้งหมด: <b>' + F(r.totalSalesAll) + ' ฿</b></div></div>' +
     '</div>' +
 
-    '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:16px">' +
+    // การ์ดสรุปผลกำไรและการแบ่งสัปดาห์
+    '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-bottom:16px">' +
       '<div class="card"><h3>💰 สรุปผลกำไรและการเงิน</h3>' +
-        '<div class="row sp" style="margin:8px 0"><span>กำไรสุทธิรวมทั้งหมด (ที่คาดว่าจะได้รับ)</span><b style="color:var(--pr);font-size:18px">' + F(r.totalProfitAll) + ' ฿</b></div>' +
-        '<div class="row sp" style="margin:8px 0"><span>เงินสด/ยอดคงเหลือเมื่อหักกำไร (คืนทุน)</span><b>' + F(netCashAfterProfit) + ' ฿</b></div>' +
+        '<div class="row sp" style="margin:10px 0"><span>ทุนรวมซื้อของทั้งหมด (คลัง + รับของ)</span><b>' + F(r.totalInvestmentCost) + ' ฿</b></div>' +
+        '<div class="row sp" style="margin:10px 0"><span>ยอดขายรวมทั้งหมด</span><b>' + F(r.totalSalesAll) + ' ฿</b></div>' +
+        '<div class="row sp" style="margin:10px 0;border-top:1px solid var(--bd);padding-top:8px"><span>กำไรสุทธิรวมทั้งหมด (ที่คาดว่าจะได้รับ)</span><b style="color:var(--pr);font-size:18px">' + F(r.totalProfitAll) + ' ฿</b></div>' +
+        '<div class="row sp" style="margin:10px 0"><span>เงินคงเหลือเมื่อหักกำไร (เงินต้นคืนทุน)</span><b>' + F(netCashAfterProfit) + ' ฿</b></div>' +
       '</div>' +
-      '<div class="card"><h3>📅 สรุปยอดแยก 4 สัปดาห์ (ประจำเดือนนี้)</h3>' + weeklyRows + '</div>' +
-    '</div>';
-}
+      
+      '<div class="card"><h3>📅 สรุปยอดและเงินลงทุนแบ่ง 4 สัปดาห์ (ประจำเดือนนี้)</h3>' +
+        '<div class="mu" style="margin-bottom:8px">ระบบจะตัดรอบสรุปผลทุกๆ วันอาทิตย์</div>' +
+        weeklyRows + 
+      '</div>' +
+    '</div>' +
 
-function exportReportExcel() {
-  const r = renderReports();
-  let rows = [
-    ['รายงานสรุปยอดขายและสวัสดิการ'],
-    ['ยอดขายประจำวัน', r.dailySales, 'กำไรประจำวัน', r.dailyProfit],
-    ['ยอดขายประจำสัปดาห์', r.weeklySales, 'กำไรประจำสัปดาห์', r.weeklyProfit],
-    ['ยอดขายประจำเดือน', r.monthlySales, 'กำไรประจำเดือน', r.monthlyProfit],
-    ['ทุนรวมซื้อของทั้งหมด', r.totalInvestmentCost, 'ยอดขายรวมทั้งหมด', r.totalSalesAll],
-    ['กำไรสุทธิรวม', r.totalProfitAll, 'เงินคงเหลือหลังหักกำไร', r.totalSalesAll - r.totalProfitAll]
-  ];
-  exportToCSV('sales_report_' + today() + '.csv', rows);
-  toast('ดาวน์โหลดรายงาน Excel แล้ว');
+    // ตารางยอดขายรายวันล่าสุด
+    '<div class="card tbl" style="margin-bottom:16px">' +
+      '<h3>📆 สรุปยอดขายและกำไรแยกรายวัน (7 วันล่าสุด)</h3>' +
+      '<table>' +
+        '<tr><th>วันที่</th><th style="text-align:right">ยอดขาย (บาท)</th><th style="text-align:right">ต้นทุน (บาท)</th><th style="text-align:right">กำไรสุทธิ (บาท)</th></tr>' +
+        dailyRows +
+      '</table>' +
+    '</div>';
 }
 
 function initCharts() {
