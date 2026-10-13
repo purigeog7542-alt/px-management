@@ -124,6 +124,11 @@ function calc() {
       baseCost = Number(p.buy_cost) || 0; 
     }
 
+    // ป้องกันกรณีผู้ใช้กรอกต้นทุนตั้งต้นมาสูงกว่าราคาขาย (กรอกผิดช่อง)
+    if (baseCost >= Number(p.price) && Number(p.price) > 0) {
+      baseCost = Number(p.price) * 0.7; // สำรองให้ต้นทุนอยู่ที่ 70% ของราคาขาย
+    }
+
     lastCost[p.id] = baseCost;
 
     let totalQty = Number(p.buy_qty) || 0;
@@ -135,22 +140,27 @@ function calc() {
 
     dynamicStock[p.id] = totalQty - (Number(p.hist) || 0) - (sold[p.id] || 0);
     
+    let calcC = baseCost;
     if (dynamicStock[p.id] > 0 && totalQty > 0) {
-      dynamicCost[p.id] = totalCost / totalQty;
-    } else {
-      dynamicCost[p.id] = baseCost > 0 ? baseCost : (Number(p.buy_cost) || 0);
+      calcC = totalCost / totalQty;
     }
+    
+    if (calcC >= Number(p.price) && Number(p.price) > 0) {
+      calcC = Number(p.price) * 0.7;
+    }
+
+    dynamicCost[p.id] = calcC > 0 ? calcC : (Number(p.price) ? Number(p.price) * 0.7 : 10);
   });
 
   const stock = p => dynamicStock[p.id] ?? (Number(p.buy_qty) - (Number(p.hist) || 0) - (sold[p.id] || 0));
   const cost = p => {
-    const c = dynamicCost[p.id] ?? lastCost[p.id] ?? (Number(p.buy_qty) > 0 ? Number(p.buy_cost) / Number(p.buy_qty) : 0);
-    return c > 0 ? c : (Number(p.buy_cost) || 0);
+    let c = dynamicCost[p.id] ?? lastCost[p.id] ?? 0;
+    if (c >= Number(p.price) && Number(p.price) > 0) c = Number(p.price) * 0.7;
+    return c > 0 ? c : (Number(p.price) ? Number(p.price) * 0.7 : 10);
   };
   
   return { sold, bal, stock, cost };
 }
-
 const P = id => D.products.find(p => p.id === id);
 const C = id => D.customers.find(c => c.id === id);
 const nextCode = (arr, pre, w) => pre + pad(Math.max(0, ...arr.map(x => parseInt((x.code||'').slice(pre.length))||0)) + 1, w);
