@@ -114,7 +114,6 @@ function calc() {
   D.products.forEach(p => {
     const productRestocks = D.restocks.filter(r => r.pid === p.id).sort((a,b) => b.ts - a.ts);
     
-    // 1. หาต้นทุนตั้งต้นหรือต้นทุนจากประวัติล่าสุดเก็บไว้เสมอ (แม้ของจะหมด)
     let baseCost = 0;
     if (productRestocks.length > 0) {
       const latest = productRestocks[0];
@@ -122,7 +121,6 @@ function calc() {
     } else if (Number(p.buy_qty) > 0) {
       baseCost = Number(p.buy_cost) / Number(p.buy_qty);
     } else {
-      // ถ้าไม่มีประวัติรับของและ buy_qty เป็น 0 ให้ดึงจากข้อมูลที่กรอกไว้ล่าสุด หรือสำรองไว้
       baseCost = Number(p.buy_cost) || 0; 
     }
 
@@ -137,7 +135,6 @@ function calc() {
 
     dynamicStock[p.id] = totalQty - (Number(p.hist) || 0) - (sold[p.id] || 0);
     
-    // 2. ถ้ามีสต็อกคงเหลือใช้ทุนเฉลี่ย แต่ถ้าของหมด (stock <= 0) ให้บังคับใช้ต้นทุนล่าสุด (baseCost) ทันที
     if (dynamicStock[p.id] > 0 && totalQty > 0) {
       dynamicCost[p.id] = totalCost / totalQty;
     } else {
