@@ -102,7 +102,7 @@ function initRealtime() {
     .subscribe();
 }
 
-ffunction calc() {
+function calc() {
   const sold = {}, bal = {}, dynamicCost = {}, dynamicStock = {}, lastCost = {};
   
   D.sales.forEach(s => (s.items || []).forEach(i => sold[i.pid] = (sold[i.pid] || 0) + i.qty));
@@ -114,7 +114,7 @@ ffunction calc() {
   D.products.forEach(p => {
     const productRestocks = D.restocks.filter(r => r.pid === p.id).sort((a,b) => b.ts - a.ts);
     
-    // กำหนดต้นทุนตั้งต้นจากข้อมูลสินค้า หรือถ้าไม่มีให้ใช้ 70% ของราคาขายกันตกเป็น 0
+    // 1. หาต้นทุนตั้งต้นหรือต้นทุนจากประวัติล่าสุดเก็บไว้เสมอ (แม้ของจะหมด)
     let baseCost = 0;
     if (productRestocks.length > 0) {
       const latest = productRestocks[0];
@@ -122,7 +122,8 @@ ffunction calc() {
     } else if (Number(p.buy_qty) > 0) {
       baseCost = Number(p.buy_cost) / Number(p.buy_qty);
     } else {
-      baseCost = Number(p.price) ? Number(p.price) * 0.7 : 10; // ค่าสำรองฉุกเฉินกันเป็น 0
+      // ถ้าไม่มีประวัติรับของและ buy_qty เป็น 0 ให้ดึงจากข้อมูลที่กรอกไว้ล่าสุด หรือสำรองไว้
+      baseCost = Number(p.buy_cost) || 0; 
     }
 
     lastCost[p.id] = baseCost;
@@ -135,11 +136,20 @@ ffunction calc() {
     });
 
     dynamicStock[p.id] = totalQty - (Number(p.hist) || 0) - (sold[p.id] || 0);
-    dynamicCost[p.id] = totalQty > 0 ? (totalCost / totalQty) : baseCost;
+    
+    // 2. ถ้ามีสต็อกคงเหลือใช้ทุนเฉลี่ย แต่ถ้าของหมด (stock <= 0) ให้บังคับใช้ต้นทุนล่าสุด (baseCost) ทันที
+    if (dynamicStock[p.id] > 0 && totalQty > 0) {
+      dynamicCost[p.id] = totalCost / totalQty;
+    } else {
+      dynamicCost[p.id] = baseCost > 0 ? baseCost : (Number(p.buy_cost) || 0);
+    }
   });
 
   const stock = p => dynamicStock[p.id] ?? (Number(p.buy_qty) - (Number(p.hist) || 0) - (sold[p.id] || 0));
-  const cost = p => dynamicCost[p.id] ?? lastCost[p.id] ?? 10;
+  const cost = p => {
+    const c = dynamicCost[p.id] ?? lastCost[p.id] ?? (Number(p.buy_qty) > 0 ? Number(p.buy_cost) / Number(p.buy_qty) : 0);
+    return c > 0 ? c : (Number(p.buy_cost) || 0);
+  };
   
   return { sold, bal, stock, cost };
 }
