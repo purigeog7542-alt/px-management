@@ -121,12 +121,7 @@ function calc() {
     } else if (Number(p.buy_qty) > 0) {
       baseCost = Number(p.buy_cost) / Number(p.buy_qty);
     } else {
-      baseCost = Number(p.buy_cost) || 0; 
-    }
-
-    // ป้องกันกรณีผู้ใช้กรอกต้นทุนตั้งต้นมาสูงกว่าราคาขาย (กรอกผิดช่อง)
-    if (baseCost >= Number(p.price) && Number(p.price) > 0) {
-      baseCost = Number(p.price) * 0.7; // สำรองให้ต้นทุนอยู่ที่ 70% ของราคาขาย
+      baseCost = Number(p.price) ? Number(p.price) * 0.7 : 10;
     }
 
     lastCost[p.id] = baseCost;
@@ -139,27 +134,41 @@ function calc() {
     });
 
     dynamicStock[p.id] = totalQty - (Number(p.hist) || 0) - (sold[p.id] || 0);
-    
-    let calcC = baseCost;
-    if (dynamicStock[p.id] > 0 && totalQty > 0) {
-      calcC = totalCost / totalQty;
-    }
-    
-    if (calcC >= Number(p.price) && Number(p.price) > 0) {
-      calcC = Number(p.price) * 0.7;
-    }
-
-    dynamicCost[p.id] = calcC > 0 ? calcC : (Number(p.price) ? Number(p.price) * 0.7 : 10);
+    dynamicCost[p.id] = totalQty > 0 ? (totalCost / totalQty) : baseCost;
   });
 
   const stock = p => dynamicStock[p.id] ?? (Number(p.buy_qty) - (Number(p.hist) || 0) - (sold[p.id] || 0));
-  const cost = p => {
-    let c = dynamicCost[p.id] ?? lastCost[p.id] ?? 0;
-    if (c >= Number(p.price) && Number(p.price) > 0) c = Number(p.price) * 0.7;
-    return c > 0 ? c : (Number(p.price) ? Number(p.price) * 0.7 : 10);
-  };
+  const cost = p => dynamicCost[p.id] ?? lastCost[p.id] ?? 10;
   
   return { sold, bal, stock, cost };
+}
+
+// ... (ฟังก์ชันอื่นๆ คงเดิม) ...
+
+function stmt(id) {
+  const c = C(id), ym = V('sm'); if (!ym) return;
+  const [y, m] = ym.split('-');
+  const ss = D.sales.filter(s => s.cust === id && s.method === 'sign' && s.date.startsWith(ym));
+  const ps = D.payments.filter(p => p.cust === id && p.status === 'ok' && p.date.startsWith(ym));
+  let itemsHtml = '';
+  ss.forEach(s => { 
+    const itemNames = (s.items || []).map(i => i.name + ' (' + i.qty + ')').join(', ');
+    itemsHtml += '<tr><td>'+s.date+'</td><td>'+s.bill+'</td><td>'+itemNames+'</td><td style="text-align:right">'+F(s.total)+'</td></tr>'; 
+  });
+  ps.forEach(p => { 
+    itemsHtml += '<tr><td>'+p.date+'</td><td>ชำระเงิน</td><td>ช่องทาง: '+p.method+'</td><td style="text-align:right;color:var(--pr)">-'+F(p.amount)+'</td></tr>'; 
+  });
+  if (!itemsHtml) itemsHtml = '<tr><td colspan="4" style="text-align:center">ไม่มีรายการในเดือนนี้</td></tr>';
+
+  const w = window.open('', '_blank');
+  w.document.write('<html><head><title>Statement - '+c.name+'</title><style>body{font-family:sans-serif;padding:20px;}table{width:100%;border-collapse:collapse;margin-top:15px;}th,td{border:1px solid #ddd;padding:8px;font-size:14px;}th{background:#f4f4f4;}</style></head><body>' +
+    '<h2>ใบแจ้งยอดหนี้ (Statement)</h2>' +
+    '<p><b>ชื่อสมาชิก:</b> '+c.name+' ('+c.code+')<br><b>ประจำเดือน:</b> '+m+'/'+y+'</p>' +
+    '<table><tr><th>วันที่</th><th>รายการ</th><th>รายละเอียด</th><th style="text-align:right">จำนวนเงิน (บาท)</th></tr>'+itemsHtml+'</table>' +
+    '<br><p style="text-align:right">ยอดค้างชำระสุทธิปัจจุบัน: <b>'+F(calc().bal[id])+' ฿</b></p>' +
+    '</body></html>');
+  w.document.close();
+  w.print();
 }
 const P = id => D.products.find(p => p.id === id);
 const C = id => D.customers.find(c => c.id === id);
