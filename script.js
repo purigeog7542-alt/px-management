@@ -174,18 +174,23 @@ function render() {
   const navEl = document.getElementById('nav');
   if (navEl) {
     let navHtml = '';
-    [['sell','🛒','ขายสินค้า'],['stock','📦','คลังสินค้า'],['cus','👥','สมาชิก ('+D.customers.length+')'],['rep','📊','รายงาน']].forEach(([k,i,t]) => {
-      navHtml += '<button class="'+(tab===k?'a':'')+'" onclick="goTab(\''+k+'\')">'+i+'<br>'+t+'</button>';
+    [
+      ['sell', '🛒', 'ขายสินค้า'],
+      ['stock', '📦', 'คลังสินค้า'],
+      ['cus', '👥', 'สมาชิก (' + D.customers.length + ')']
+    ].forEach(([k, i, t]) => {
+      navHtml += '<button class="' + (tab === k ? 'a' : '') + '" onclick="goTab(\'' + k + '\')">' + i + '<br>' + t + '</button>';
     });
+    // เพิ่มปุ่มลิงก์ไปหน้าแดชบอร์ดแยก
+    navHtml += '<button onclick="window.location.href=\'dashboard.html\'">📊<br>แดชบอร์ด</button>';
     navEl.innerHTML = navHtml;
-  }
   
   const k = calc();
   let content = '';
   if (tab === 'sell') content = vSell(k);
   else if (tab === 'stock') content = vStock(k);
   else if (tab === 'cus') content = vCus(k);
-  else if (tab === 'rep') content = vRep();
+
   
   const appEl = document.getElementById('app');
   if (appEl) appEl.innerHTML = content;
