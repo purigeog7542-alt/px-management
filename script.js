@@ -138,7 +138,7 @@ function calc() {
       totalCost += Number(r.cost) || 0;
     });
 
-    // ใช้ buy_qty ปัจจุบันเป็นตัวตั้งต้นหลัก
+    // ยึด buy_qty ปัจจุบันเป็นตัวตั้งต้นหลัก
     dynamicStock[p.id] = Number(p.buy_qty) - (sold[p.id] || 0);
     
     let calcC = baseCost;
@@ -162,6 +162,11 @@ function calc() {
   
   return { sold, bal, stock, cost };
 }
+
+const P = id => D.products.find(p => p.id === id);
+const C = id => D.customers.find(c => c.id === id);
+const nextCode = (arr, pre, w) => pre + pad(Math.max(0, ...arr.map(x => parseInt((x.code||'').slice(pre.length))||0)) + 1, w);
+const stat = (p, k) => { const s = k.stock(p); return s <= 0 ? ['หมด', 'r'] : s <= p.reorder ? ['ด่วน', 'r'] : s <= p.reorder * 1.5 ? ['เตือน', 'y'] : ['ปกติ', 'g']; };
 
 function goTab(k) { tab = k; render(); }
 function srch(val) { q = val; }
@@ -458,8 +463,7 @@ async function adjustStockManual(pid) {
   }
 
   const soldQty = k.sold[pid] || 0;
-  const histQty = p.hist || 0;
-  const newBuyQty = newStock + soldQty + histQty;
+  const newBuyQty = newStock + soldQty;
 
   try {
     const { error } = await sb.from('products').update({ buy_qty: newBuyQty }).eq('id', pid);
