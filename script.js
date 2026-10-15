@@ -138,7 +138,8 @@ function calc() {
       totalCost += Number(r.cost) || 0;
     });
 
-    dynamicStock[p.id] = totalQty - (Number(p.hist) || 0) - (sold[p.id] || 0);
+    // ใช้ buy_qty ปัจจุบันเป็นตัวตั้งต้นหลัก
+    dynamicStock[p.id] = Number(p.buy_qty) - (sold[p.id] || 0);
     
     let calcC = baseCost;
     if (dynamicStock[p.id] > 0 && totalQty > 0) {
@@ -152,7 +153,7 @@ function calc() {
     dynamicCost[p.id] = calcC > 0 ? calcC : (Number(p.price) ? Number(p.price) * 0.7 : 10);
   });
 
-  const stock = p => dynamicStock[p.id] ?? (Number(p.buy_qty) - (Number(p.hist) || 0) - (sold[p.id] || 0));
+  const stock = p => dynamicStock[p.id] ?? (Number(p.buy_qty) - (sold[p.id] || 0));
   const cost = p => {
     let c = dynamicCost[p.id] ?? lastCost[p.id] ?? 0;
     if (c >= Number(p.price) && Number(p.price) > 0) c = Number(p.price) * 0.7;
@@ -161,11 +162,6 @@ function calc() {
   
   return { sold, bal, stock, cost };
 }
-
-const P = id => D.products.find(p => p.id === id);
-const C = id => D.customers.find(c => c.id === id);
-const nextCode = (arr, pre, w) => pre + pad(Math.max(0, ...arr.map(x => parseInt((x.code||'').slice(pre.length))||0)) + 1, w);
-const stat = (p, k) => { const s = k.stock(p); return s <= 0 ? ['หมด', 'r'] : s <= p.reorder ? ['ด่วน', 'r'] : s <= p.reorder * 1.5 ? ['เตือน', 'y'] : ['ปกติ', 'g']; };
 
 function goTab(k) { tab = k; render(); }
 function srch(val) { q = val; }
@@ -181,7 +177,6 @@ function render() {
     ].forEach(([k, i, t]) => {
       navHtml += '<button class="' + (tab === k ? 'a' : '') + '" onclick="goTab(\'' + k + '\')">' + i + '<br>' + t + '</button>';
     });
-    // เพิ่มปุ่มลิงก์ไปหน้าแดชบอร์ดแยก
     navHtml += '<button onclick="window.location.href=\'dashboard.html\'">📊<br>แดชบอร์ด</button>';
     navEl.innerHTML = navHtml;
   }
