@@ -34,7 +34,6 @@ function toast(t) {
 const F = n => (+n||0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-// --- ฟังก์ชันช่วยเหลือ Export Excel (CSV UTF-8) ---
 function exportToCSV(filename, rows) {
   let processRow = function (row) {
     return row.map(val => {
@@ -54,7 +53,6 @@ function exportToCSV(filename, rows) {
   document.body.removeChild(link);
 }
 
-// --- โหลดข้อมูลจาก Supabase ---
 async function loadDataFromSupabase() {
   try {
     const [pRes, mRes, sRes, iRes, payRes, rRes] = await Promise.all([
@@ -93,11 +91,9 @@ async function loadDataFromSupabase() {
   }
 }
 
-// --- เปิดใช้งาน Supabase Realtime ---
 function initRealtime() {
   sb.channel('public-db')
     .on('postgres_changes', { event: '*', schema: 'public' }, payload => {
-      console.log('Realtime change received:', payload);
       loadDataFromSupabase();
     })
     .subscribe();
@@ -298,392 +294,6 @@ async function checkout() {
   }
 }
 
-// --- หน้าแสดงผลคลังสินค้า (vStock) ---
-function vStock() {
-  const k = calc();
-  const rows = D.products.slice().sort((a,b)=>a.code>b.code?1:-1).map(p => {
-    const s = stat(p, k), c = k.cost(p);
-    return '<tr><td><b>' + esc(p.name) + '</b><br><span class="mu">' + p.code + '</span></td>' +
-      '<td><b>' + k.stock(p) + '</b> ' + p.unit + '</td>' +
-      '<td>' + F(p.price) + ' ฿</td>' +
-      '<td>' + F(c) + ' ฿</td>' +
-      '<td><b style="color:var(--pr)">' + F(p.price - c) + ' ฿</b> <span class="mu">(' + ((p.price - c) / p.price * 100).toFixed(1) + '%)</span></td>' +
-      '<td><span class="badge ' + (s[1] === 'ok' ? 'ok' : 'er') + '">' + s[0] + '</span></td>' +
-      '<td><div class="row" style="gap:4px">' +
-        '<button class="btn s sm" onclick="adjustStockManual(\'' + p.id + '\')">ปรับสต็อก</button>' +
-        '<button class="btn s sm" onclick="gate(()=>fRestock(\'' + p.id + '\'))">รับของ</button>' +
-        '<button class="btn sm" onclick="gate(()=>fProd(\'' + p.id + '\'))">แก้</button>' +
-      '</div></td></tr>';
-  }).join('') || '<tr><td colspan="7" style="text-align:center" class="mu">ยังไม่มีสินค้าในระบบ</td></tr>';
-
-  return '<div class="row sp" style="margin-bottom:12px">' +
-    '<h2>📦 คลังสินค้า</h2>' +
-    '<div class="row" style="flex:none;gap:6px">' +
-      '<button class="btn sm s" onclick="exportStockExcel()">📥 Excel</button>' +
-      '<button class="btn sm" onclick="window.print()">🖨 พิมพ์ PDF / รายงาน</button>' +
-      '<button class="btn sm p" onclick="gate(()=>fProd())">+ เพิ่มสินค้า</button>' +
-    '</div></div>' +
-    '<div class="card tbl"><table><tr><th>สินค้า</th><th>คงเหลือ</th><th>ราคาขาย</th><th>ทุน/หน่วย</th><th>กำไร/หน่วย</th><th>สถานะ</th><th>จัดการ</th></tr>' + rows + '</table></div>';
-}
-
-function exportStockExcel() {
-  const k = calc();
-  let rows = [['รหัสสินค้า', 'ชื่อสินค้า', 'คงเหลือ', 'หน่วย', 'ราคาขาย (บาท)', 'ทุน/หน่วย (บาท)', 'กำไร/หน่วย (บาท)', 'สถานะ']];
-  D.products.slice().sort((a,b)=>a.code>b.code?1:-1).forEach(p => {
-    const s = stat(p, k), c = k.cost(p);
-    rows.push([p.code, p.name, k.stock(p), p.unit, p.price, c.toFixed(2), (p.price - c).toFixed(2), s[0]]);
-  });
-  exportToCSV('stock_report_' + today() + '.csv', rows);
-  toast('ดาวน์โหลดรายงานคลังสินค้า (Excel) แล้ว');
-}
-
-function modal(h, save) {
-  const mb = document.getElementById('mb');
-  const mo = document.getElementById('mo');
-  if (!mb || !mo) return;
-  mb.innerHTML = h + '<div class="row" style="margin-top:14px"><button class="btn s" onclick="closeM()">ปิด</button>'+(save?'<button class="btn" id="sv">บันทึก</button>':'')+'</div>';
-  mo.style.display = 'flex';
-  if (save) document.getElementById('sv').onclick = async () => { try { await save(); closeM(); } catch(e) { toast('ไม่สำเร็จ: '+e.message); } };
-}
-
-const closeM = () => {
-  const mo = document.getElementById('mo');
-  if (mo) mo.style.display = 'none';
-};
-const V = id => document.getElementById(id) ? document.getElementById(id).value : '';
-
-function pv(fromMk) {
-  const g = id => document.getElementById(id), n = id => g(id) ? (+g(id).value || 0) : 0;
-  const c = g('cs') ? n('cs') : (n('pe') > 0 ? n('pc') / n('pe') : 0);
-  if (fromMk && n('mk') > 0 && c > 0 && g('pr')) g('pr').value = Math.ceil(c * (1 + n('mk') / 100));
-  const box = g('pvb'); if (!box) return;
-  const pr = n('pr'), pf = pr - c, cl = pf < 0 ? 'neg' : '';
-  let h = '<div class="row sp"><span>ต้นทุน/หน่วย</span><b>' + F(c) + ' ฿</b></div>' +
-    '<div class="row sp"><span>กำไร/หน่วย</span><b class="' + cl + '">' + F(pf) + ' ฿</b></div>' +
-    '<div class="row sp"><span>กำไรเทียบต้นทุน (markup)</span><b class="' + cl + '">' + (c > 0 ? F(pf / c * 100) : '-') + ' %</b></div>' +
-    '<div class="row sp"><span>กำไรเทียบราคาขาย (margin)</span><b class="' + cl + '">' + (pr > 0 ? F(pf / pr * 100) : '-') + ' %</b></div>';
-  if (g('pe') && n('pe') > 0) h += '<div class="row sp"><span>กำไรต่อ 1 แพ็ค (' + n('pe') + ' ชิ้น)</span><b class="' + cl + '">' + F(pf * n('pe')) + ' ฿</b></div>';
-  if (pr > 0 && pf < 0) h += '<div class="neg" style="margin-top:6px"><b>⚠️ ราคาขายต่ำกว่าต้นทุน — ขาดทุน</b></div>';
-  box.innerHTML = h;
-}
-
-function fProd(id) {
-  const p = id ? P(id) : null, k = calc();
-  const currentIcon = p ? (p.icon || '🥤') : '🥤';
-  const emojis = ['🥤', '☕', '🍵', '🥛', '🧃', '🍫', 'สาเหตุที่สินค้าในหน้าคลังสินค้าหายไป เกิดจากตัวแปรในฟังก์ชัน `calc()` ของไฟล์ `script.js` ครับ 
-
-เมื่อฟังก์ชัน `calc()` วนลูปคำนวณข้อมูลสินค้า หากพบค่าที่เป็น `null` หรือ `undefined` (เช่น สินค้าที่ตัดสต็อกจนกลายเป็น 0 หรือสินค้าที่ไม่มีการบันทึก `buy_qty`) อาจส่งผลให้เกิดข้อผิดพลาดใน JavaScript และระงับการวาดตารางแสดงผล (`render()`) ทำให้หน้าคลังสินค้ากลายเป็นว่างเปล่าครับ
-
----
-
-### 🛠️ โค้ดแก้ไขสมบูรณ์สำหรับไฟล์ `script.js`
-
-ได้มีการปรับปรุงฟังก์ชัน `calc()` และระบบคำนวณ โดยใส่ตัวป้องกันค่าว่าง (`fallback values`) เพิ่มเติม เพื่อให้หน้าคลังสินค้าดึงรายการสินค้ากลับมาแสดงผลได้อย่างถูกต้องสมบูรณ์ครับ
-
-สามารถคัดลอกโค้ดทั้งหมดด้านล่างนี้ไปวางทับในไฟล์ **`script.js`** บน GitHub ได้เลยครับ:
-
-```javascript
-// --- ตั้งค่าการเชื่อมต่อ Supabase ---
-const SUPABASE_URL = '[https://wtyvtjvzvgurybtcnnsf.supabase.co](https://wtyvtjvzvgurybtcnnsf.supabase.co)'; 
-const SUPABASE_ANON_KEY = 'sb_publishable_JLPzS9fSB0-mJN9D3Vssiw_ibQEXq4d'; 
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-let D = { products: [], customers: [], sales: [], payments: [], restocks: [] };
-let tab = 'sell', cust = '', method = 'sign', cart = {}, q = '';
-let salesChartInstance = null, profitChartInstance = null;
-let unlockUntil = 0;
-
-const hp = s => { let h = 5381; for (let c of ('mw' + s)) h = ((h << 5) + h + c.charCodeAt(0)) | 0; return String(h); };
-const gate = fn => {
-  const pin = localStorage.getItem('mw_pin');
-  if (!pin || Date.now() < unlockUntil) return fn();
-  modal('<h2>🔒 ใส่รหัส PIN</h2><label>กรุณาใส่รหัส PIN เพื่อดำเนินการต่อ</label><input id="pin" type="password" maxlength="6" inputmode="numeric">', () => {
-    const p = V('pin');
-    if (hp(p) !== pin) throw {message: 'รหัส PIN ไม่ถูกต้อง'};
-    unlockUntil = Date.now() + 5 * 60 * 1000;
-    fn();
-  });
-  setTimeout(() => { const el = document.getElementById('pin'); if(el) el.focus(); }, 100);
-};
-
-const pad = (n, l=2) => String(n).padStart(l, '0');
-const ds = d => d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
-const today = () => ds(new Date());
-
-function toast(t) {
-  const e = document.getElementById('toast');
-  if (!e) return;
-  e.textContent = t; e.style.display = 'block';
-  setTimeout(() => e.style.display = 'none', 2600);
-}
-const F = n => (+n||0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
-const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-
-// --- ฟังก์ชันช่วยเหลือ Export Excel (CSV UTF-8) ---
-function exportToCSV(filename, rows) {
-  let processRow = function (row) {
-    return row.map(val => {
-      if (val === null || val === undefined) return '';
-      let escaped = String(val).replace(/"/g, '""');
-      if (escaped.search(/("|,|\n)/g) >= 0) escaped = '"' + escaped + '"';
-      return escaped;
-    }).join(',');
-  };
-  let csv = '\uFEFF' + rows.map(processRow).join('\n');
-  let blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  let link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.setAttribute('download', filename);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-}
-
-// --- โหลดข้อมูลจาก Supabase ---
-async function loadDataFromSupabase() {
-  try {
-    const [pRes, mRes, sRes, iRes, payRes, rRes] = await Promise.all([
-      sb.from('products').select('*'),
-      sb.from('members').select('*'),
-      sb.from('transactions').select('*'),
-      sb.from('transaction_items').select('*'),
-      sb.from('payments').select('*'),
-      sb.from('restocks').select('*')
-    ]);
-
-    if (pRes.error) throw pRes.error;
-    if (mRes.error) throw mRes.error;
-
-    const transactions = (sRes.data || []).map(tx => ({
-      ...tx,
-      items: (iRes.data || []).filter(item => item.transaction_id === tx.id).map(item => ({
-        pid: item.product_id,
-        name: item.name,
-        qty: Number(item.qty) || 0,
-        price: Number(item.unit_price) || 0,
-        cost: item.qty > 0 ? (Number(item.total_cost) / Number(item.qty)) : 0
-      }))
-    }));
-
-    D.products = pRes.data || [];
-    D.customers = (mRes.data || []).map(m => ({ id: m.id, code: m.code, name: m.name, opening: m.opening, credit_limit: m.credit_limit }));
-    D.sales = transactions;
-    D.payments = payRes.data || [];
-    D.restocks = rRes.data || [];
-
-    render();
-  } catch (err) {
-    console.error('Error loading data:', err);
-    toast('โหลดข้อมูลจาก Supabase ไม่สำเร็จ: ' + err.message);
-  }
-}
-
-// --- เปิดใช้งาน Supabase Realtime ---
-function initRealtime() {
-  sb.channel('public-db')
-    .on('postgres_changes', { event: '*', schema: 'public' }, payload => {
-      console.log('Realtime change received:', payload);
-      loadDataFromSupabase();
-    })
-    .subscribe();
-}
-
-function calc() {
-  const sold = {}, bal = {}, dynamicCost = {}, dynamicStock = {}, lastCost = {};
-  
-  D.sales.forEach(s => (s.items || []).forEach(i => sold[i.pid] = (sold[i.pid] || 0) + (Number(i.qty) || 0)));
-  
-  D.customers.forEach(c => bal[c.id] = +c.opening || 0);
-  D.sales.forEach(s => { if (s.method === 'sign' && s.cust in bal) bal[s.cust] += Number(s.total) || 0; });
-  D.payments.forEach(y => { if (y.cust in bal) bal[y.cust] -= Number(y.amount) || 0; });
-
-  D.products.forEach(p => {
-    const productRestocks = D.restocks.filter(r => r.pid === p.id).sort((a,b) => b.ts - a.ts);
-    
-    let baseCost = 0;
-    if (productRestocks.length > 0) {
-      const latest = productRestocks[0];
-      baseCost = latest.units > 0 ? (latest.cost / latest.units) : 0;
-    } else if (Number(p.buy_qty) > 0) {
-      baseCost = Number(p.buy_cost) / Number(p.buy_qty);
-    } else {
-      baseCost = Number(p.buy_cost) || 0; 
-    }
-
-    if (baseCost >= Number(p.price) && Number(p.price) > 0) {
-      baseCost = Number(p.price) * 0.7; 
-    }
-
-    lastCost[p.id] = baseCost;
-
-    let totalQty = Number(p.buy_qty) || 0;
-    let totalCost = Number(p.buy_cost) || 0;
-    productRestocks.forEach(r => {
-      totalQty += Number(r.units) || 0;
-      totalCost += Number(r.cost) || 0;
-    });
-
-    dynamicStock[p.id] = Number(p.buy_qty || 0) - (sold[p.id] || 0);
-    
-    let calcC = baseCost;
-    if (dynamicStock[p.id] > 0 && totalQty > 0) {
-      calcC = totalCost / totalQty;
-    }
-    
-    if (calcC >= Number(p.price) && Number(p.price) > 0) {
-      calcC = Number(p.price) * 0.7;
-    }
-
-    dynamicCost[p.id] = calcC > 0 ? calcC : (Number(p.price) ? Number(p.price) * 0.7 : 10);
-  });
-
-  const stock = p => dynamicStock[p.id] ?? (Number(p.buy_qty || 0) - (sold[p.id] || 0));
-  const cost = p => {
-    let c = dynamicCost[p.id] ?? lastCost[p.id] ?? 0;
-    if (c >= Number(p.price) && Number(p.price) > 0) c = Number(p.price) * 0.7;
-    return c > 0 ? c : (Number(p.price) ? Number(p.price) * 0.7 : 10);
-  };
-  
-  return { sold, bal, stock, cost };
-}
-
-const P = id => D.products.find(p => p.id === id);
-const C = id => D.customers.find(c => c.id === id);
-const nextCode = (arr, pre, w) => pre + pad(Math.max(0, ...arr.map(x => parseInt((x.code||'').slice(pre.length))||0)) + 1, w);
-const stat = (p, k) => { const s = k.stock(p); return s <= 0 ? ['หมด', 'r'] : s <= p.reorder ? ['ด่วน', 'r'] : s <= p.reorder * 1.5 ? ['เตือน', 'y'] : ['ปกติ', 'g']; };
-
-function goTab(k) { tab = k; render(); }
-function srch(val) { q = val; }
-
-function render() {
-  const navEl = document.getElementById('nav');
-  if (navEl) {
-    let navHtml = '';
-    [
-      ['sell', '🛒', 'ขายสินค้า'],
-      ['stock', '📦', 'คลังสินค้า'],
-      ['cus', '👥', 'สมาชิก (' + D.customers.length + ')']
-    ].forEach(([k, i, t]) => {
-      navHtml += '<button class="' + (tab === k ? 'a' : '') + '" onclick="goTab(\'' + k + '\')">' + i + '<br>' + t + '</button>';
-    });
-    navHtml += '<button onclick="window.location.href=\'dashboard.html\'">📊<br>แดชบอร์ด</button>';
-    navEl.innerHTML = navHtml;
-  }
-  
-  const k = calc();
-  let content = '';
-  if (tab === 'sell') content = vSell(k);
-  else if (tab === 'stock') content = vStock(k);
-  else if (tab === 'cus') content = vCus(k);
-  
-  const appEl = document.getElementById('app');
-  if (appEl) appEl.innerHTML = content;
-}
-
-function vSell(k) {
-  const ps = D.products.slice().sort((a,b)=>a.code>b.code?1:-1).filter(p=>!q||(p.name+p.code).toLowerCase().includes(q.toLowerCase()));
-  const items = Object.keys(cart).filter(i=>cart[i]>0), tot = items.reduce((s,i)=>s+cart[i]*P(i).price,0);
-  
-  let signHtml = '';
-  if (method === 'sign') {
-    let opts = '<option value="">— เลือกสมาชิก —</option>';
-    D.customers.slice().sort((a,b)=>a.name.localeCompare(b.name,'th')).forEach(c => {
-      opts += '<option value="'+c.id+'" '+(cust===c.id?'selected':'')+'>'+c.name+' ('+c.code+')</option>';
-    });
-    let curBal = '';
-    if (cust) {
-      const cObj = C(cust), curB = k.bal[cust], limit = cObj.credit_limit || 1000;
-      const isOver = (curB + tot) > limit;
-      curBal = '<div class="mu" style="margin-top:6px">ยอดค้างปัจจุบัน: <b>'+F(curB)+' ฿</b> · วงเงินเครดิต: <b>'+F(limit)+' ฿</b>' +
-        (isOver ? '<div class="neg" style="margin-top:4px"><b>⚠️ ยอดรวมจะเกินวงเงินเครดิตที่กำหนด — ไม่อนุญาตให้เซ็นจ่าย</b></div>' : '') + '</div>';
-    }
-    signHtml = '<label>เลือกสมาชิก ('+D.customers.length+' ท่าน)</label><select onchange="cust=this.value;render()">'+opts+'</select>'+curBal;
-  }
-
-  let gridHtml = '';
-  if (ps.length === 0) {
-    gridHtml = '<div class="mu">ยังไม่มีสินค้า — เพิ่มที่แท็บคลังสินค้า</div>';
-  } else {
-    gridHtml = '<div class="grid">';
-    ps.forEach(p => {
-      const s = k.stock(p), n = cart[p.id] || 0;
-      let badge = n ? '<div style="margin-top:6px" class="tag g">เลือก '+n+'</div>' : '';
-      gridHtml += '<button class="prod '+(n?'on':'')+' '+(s<=0?'off':'')+'" onclick="add(\''+p.id+'\',1)"><div class="icon">'+(p.icon||'🥤')+'</div><div><b>'+p.name+'</b><span class="pr">'+F(p.price)+' ฿</span><div class="mu" style="margin-top:4px">เหลือ '+s+' '+p.unit+'</div></div>'+badge+'</button>';
-    });
-    gridHtml += '</div>';
-  }
-
-  let cartHtml = '';
-  if (items.length > 0) {
-    let itemsList = '';
-    items.forEach(i => {
-      itemsList += '<div class="row sp" style="margin:8px 0"><div style="flex:2">'+P(i).name+'<div class="mu">'+F(P(i).price)+' ฿ × '+cart[i]+'</div></div><div class="row" style="flex:1"><button class="btn s sm" onclick="add(\''+i+'\',-1)">−</button><b style="text-align:center">'+cart[i]+'</b><button class="btn s sm" onclick="add(\''+i+'\',1)">+</button></div></div>';
-    });
-    let disableBtn = '';
-    if (method === 'sign' && cust) {
-      const cObj = C(cust), curB = k.bal[cust], limit = cObj.credit_limit || 1000;
-      if ((curB + tot) > limit) disableBtn = ' disabled style="opacity:0.5;cursor:not-allowed"';
-    }
-    cartHtml = '<div class="card" style="margin-top:14px"><h2 style="margin-top:0">ตะกร้าสินค้า</h2>'+itemsList+'<div class="row sp" style="margin:12px 0;border-top:1px solid var(--bd);padding-top:8px"><b>ยอดรวมทั้งสิ้น</b><b style="font-size:22px;color:var(--pr)">'+F(tot)+' ฿</b></div><button class="btn w"'+disableBtn+' onclick="checkout()">ยืนยันการขาย'+(method==='sign'?' (บันทึกยอดเซ็น)':'')+'</button><button class="btn s w" style="margin-top:6px" onclick="cart={};render()">ล้างตะกร้า</button></div>';
-  }
-
-  return '<div class="card"><div class="seg"><button class="'+(method==='sign'?'a':'')+'" onclick="method=\'sign\';render()">✍️ เซ็นจ่าย (สมาชิก)</button><button class="'+(method==='cash'?'a':'')+'" onclick="method=\'cash\';render()">💵 เงินสด</button></div>'+signHtml+'</div><input placeholder="🔍 ค้นหาสินค้า / รหัส" id="sq" value="'+esc(q)+'" oninput="srch(this.value)" style="margin-bottom:12px">'+gridHtml+cartHtml;
-}
-
-function add(id, d) {
-  const k = calc(), p = P(id), n = (cart[id] || 0) + d;
-  if (n > k.stock(p) && d > 0) return toast('สินค้าในสต็อกไม่พอ');
-  cart[id] = Math.max(0, n);
-  render();
-}
-
-async function checkout() {
-  const k = calc(), items = Object.keys(cart).filter(i=>cart[i]>0).map(i=>{const p=P(i);return{pid:i,name:p.name,qty:cart[i],price:p.price,cost:+k.cost(p).toFixed(4)}});
-  if (!items.length) return; if (method === 'sign' && !cust) return toast('กรุณาเลือกสมาชิกก่อน');
-  const tt = items.reduce((s,i)=>s+i.qty*i.price,0);
-  if (method === 'sign') {
-    const cObj = C(cust), limit = cObj.credit_limit || 1000;
-    if ((k.bal[cust] + tt) > limit) return toast('วงเงินเครดิตไม่เพียงพอ ไม่สามารถเซ็นจ่ายได้');
-  }
-  const d = today(), pre = 'B' + d.slice(2).replace(/-/g,'') + '-'; let n = D.sales.filter(s=>s.date===d).length + 1, bill;
-  for(;;){bill=pre+pad(n,3);if(!D.sales.find(s=>s.id===bill))break;n++;}
-
-  const txData = {
-    id: bill,
-    bill: bill,
-    date: d,
-    ts: Date.now(),
-    method: method,
-    cust: method === 'sign' ? cust : null,
-    cust_name: method === 'sign' ? C(cust).name : 'เงินสด',
-    total: tt,
-    cost: items.reduce((s,i)=>s+i.qty*i.cost,0)
-  };
-
-  try {
-    const { error: txErr } = await sb.from('transactions').insert([txData]);
-    if (txErr) throw txErr;
-
-    const itemRows = items.map(i => ({
-      transaction_id: bill,
-      product_id: i.pid,
-      name: i.name,
-      qty: i.qty,
-      unit_price: i.price,
-      total_cost: i.qty * i.cost
-    }));
-
-    const { error: itmErr } = await sb.from('transaction_items').insert(itemRows);
-    if (itmErr) throw itmErr;
-
-    cart = {}; toast('บันทึกการขายสำเร็จ: '+bill);
-    loadDataFromSupabase();
-  } catch (err) {
-    toast('บันทึกการขายไม่สำเร็จ: ' + err.message);
-  }
-}
-
-// --- หน้าแสดงผลคลังสินค้า (vStock) ---
 function vStock() {
   const k = calc();
   const rows = D.products.slice().sort((a,b)=>a.code>b.code?1:-1).map(p => {
@@ -919,7 +529,6 @@ async function cancelBill(sid) {
   toast('ยกเลิกบิลเรียบร้อยแล้ว');
 }
 
-// --- หน้าสมาชิก (vCus) ---
 function vCus(k) {
   const tot = Object.values(k.bal).reduce((a,b)=>a+b,0), pd = D.payments.filter(y=>y.status==='pending');
   let pendingHtml = '';
@@ -1017,7 +626,6 @@ function fPay(id) {
   });
 }
 
-// --- ฟังก์ชันลบประวัติการชำระเงินหรือรายการบิล ---
 async function delPayOrTx(tbl, id) {
   if (!confirm('ยืนยันลบรายการนี้?')) return;
   if (tbl === 'sales') {
@@ -1032,7 +640,6 @@ async function delPayOrTx(tbl, id) {
   closeM();
 }
 
-// --- ฟังก์ชันพิมพ์ใบแจ้งหนี้ Statement รายเดือน ---
 function stmt(id) {
   const c = C(id), k = calc();
   const m = V('sm');
@@ -1060,7 +667,6 @@ function stmt(id) {
   win.print();
 }
 
-// --- สั่งเริ่มทำงานเมื่อเปิดหน้าเว็บ ---
 document.addEventListener('DOMContentLoaded', () => {
   loadDataFromSupabase();
   initRealtime();
