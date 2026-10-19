@@ -248,7 +248,6 @@ function vStock() {
         '<button class="btn sm" onclick="fProd(\'' + p.id + '\')">แก้ไข</button>' +
       '</div>';
     } else {
-      // 💡 เปลี่ยนปุ่มฝั่ง Seller เป็นปุ่มปรับสต็อก
       actionBtns = '<div class="row" style="gap:4px">' +
         '<button class="btn s sm" onclick="adjustStockManual(\'' + p.id + '\')">ปรับสต็อก</button>' +
       '</div>';
@@ -482,12 +481,131 @@ async function delRs(rid) {
 }
 
 function vCus(k) {
+  const isMgr = window.USER_ROLE === 'manager';
   let rows = '';
   D.customers.slice().sort((a,b)=>a.code.localeCompare(b.code)).forEach(c => {
     const curB = k.bal[c.id], lim = c.credit_limit || 1000;
-    rows += '<tr><td>'+c.code+'</td><td><b>'+esc(c.name)+'</b></td><td><b class="'+(curB>0?'neg':'')+'">'+F(curB)+'</b> <span class="mu">/ '+F(lim)+'</span></td></tr>';
+    
+    let actionBtn = '';
+    if (isMgr) {
+      actionBtn = '<div class="row" style="gap:4px">' +
+        '<button class="btn s sm" onclick="fCusAdd(\''+c.id+'\')">เพิ่ม/ลดเงิน</button>' +
+        '<button class="btn sm" onclick="fCus(\''+c.id+'\')">แก้ไข</button>' +
+      '</div>';
+    } else {
+      // 💡 พนักงานขาย (Seller) มีปุ่มจัดการเพิ่มยอดเงินได้อย่างเดียว
+      actionBtn = '<div class="row" style="gap:4px">' +
+        '<button class="btn s sm" onclick="fCusAdd(\''+c.id+'\')">จัดการเพิ่มยอดเงิน</button>' +
+      '</div>';
+    }
+
+    rows += '<tr>' +
+      '<td>' + c.code + '</td>' +
+      '<td><b>' + esc(c.name) + '</b></td>' +
+      '<td><b class="' + (curB > 0 ? 'neg' : '') + '">' + F(curB) + '</b> <span class="mu">/ ' + F(lim) + '</span></td>' +
+      '<td>' + actionBtn + '</td>' +
+      '</tr>';
   });
-  return '<div class="row sp"><h2>👥 รายชื่อสมาชิก</h2></div><div class="card tbl"><table><tr><th>รหัส</th><th>ชื่อสมาชิก</th><th>ยอดค้าง / วงเงิน</th></tr>'+rows+'</table></div>';
+
+  let headerBtns = '';
+  if (isMgr) {
+    headerBtns = '<div class="row" style="gap:6px">' +
+      '<button class="btn sm" onclick="exportCusPDF()">📄 Export PDF</button>' +
+      '<button class="btn sm p" onclick="fCus()">+ เพิ่มสมาชิกใหม่</button>' +
+    '</div>';
+  }
+
+  return '<div class="row sp" style="margin-bottom:12px">' +
+    '<h2>👥 รายชื่อสมาชิก</h2>' +
+    '<div class="row" style="flex:none">' + headerBtns + '</div>' +
+    '</div>' +
+    '<div class="card tbl"><table><tr>' +
+    '<th>รหัส</th><th>ชื่อสมาชิก</th><th>ยอดค้าง / วงเงิน</th><th>จัดการ</th>' +
+    '</tr>' + rows + '</table></div>';
+}
+
+function fCusAdd(id) {
+  const c = C(id);
+  if (!c) return;
+  modal('<h2>จัดการยอดเงินสมาชิก: ' + esc(c.name) + '</h2><label>จำนวนเงินที่ต้องการเพิ่ม (บาท)</label><input id="add_amt" type="number" inputmode="decimal" step="any" placeholder="ระบุตัวเลข เช่น 100">',
+  async () => {
+    const amt = +V('add_amt') || 0;
+    if (!(amt > 0)) throw {message: 'กรุณากรอกจำนวนเงินให้ถูกต้อง'};
+    
+    const newPayment = {
+      id: 'P' + Date.now(),
+      cust: id,
+      ts: Date.now(),
+      date: today(),
+      amount: amt,
+      status: 'ok'
+    };
+
+    const { error } = await sb.from('payments').insert([newPayment]);
+    if (error) throw error;
+
+    loadDataFromSupabase();
+    toast('บันทึกเพิ่มยอดเงินสำเร็จ');
+  });
+}
+
+function fCus(id) {
+  const isMgr = window.USER_ROLE === 'manager';
+  if (!isMgr) return toast('พนักงานขายไม่มีสิทธิ์จัดการส่วนนี้');
+
+  const c = id ? C(id) : null;
+  modal('<h2>'+(p=>p?'แก้ไขสมาชิก':'เพิ่มสมาชิกใหม่')(c)+'</h2>' +
+    '<label>ชื่อ-นามสกุล</label><input id="cn" value="'+esc(c?c.name:'')+'">' +
+    '<label>ยอดหนี้ตั้งต้น (บาท)</label><input id="co" type="number" inputmode="decimal" step="any" value="'+(c?c.opening:0)+'">' +
+    '<label>วงเงินเครดิตสูงสุด (บาท)</label><input id="cl" type="number" inputmode="decimal" step="any" value="'+(c?c.credit_limit:1000)+'">' +
+    (c ? '<button class="btn s w" style="margin-top:14px;color:var(--er);border-color:var(--er)" onclick="delCus(\''+id+'\')">🗑 ลบสมาชิก</button>' : ''),
+  async () => {
+    const name = V('cn').trim(); if(!name) throw{message:'กรอกชื่อสมาชิก'};
+    const opening = +V('co') || 0;
+    const credit_limit = +V('cl') || 1000;
+
+    if(c) {
+      const { error } = await sb.from('members').update({ name, opening, credit_limit }).eq('id', c.id);
+      if (error) throw error;
+    } else {
+      const code = nextCode(D.customers,'C',2);
+      const newC = {
+        id: code,
+        code: code,
+        name: name,
+        opening: opening,
+        credit_limit: credit_limit
+      };
+      const { error } = await sb.from('members').insert([newC]);
+      if (error) throw error;
+    }
+    loadDataFromSupabase();
+  });
+}
+
+async function delCus(id) {
+  if (!confirm('ยืนยันลบสมาชิอนี้?')) return;
+  const { error } = await sb.from('members').delete().eq('id', id);
+  if (error) return toast('ลบไม่สำเร็จ: ' + error.message);
+  closeM(); loadDataFromSupabase(); toast('ลบสมาชิกแล้ว');
+}
+
+function exportCusPDF() {
+  const isMgr = window.USER_ROLE === 'manager';
+  if (!isMgr) return toast('ไม่มีสิทธิ์ใช้งานฟังก์ชันนี้');
+  
+  const k = calc();
+  let w = window.open('', '_blank');
+  let rows = '';
+  D.customers.slice().sort((a,b)=>a.code.localeCompare(b.code)).forEach(c => {
+    rows += '<tr><td>'+c.code+'</td><td>'+esc(c.name)+'</td><td>'+F(k.bal[c.id])+' ฿</td><td>'+F(c.credit_limit)+' ฿</td></tr>';
+  });
+
+  w.document.write('<html><head><title>รายงานรายชื่อสมาชิก</title><style>body{font-family:sans-serif;padding:20px;}table{width:100%;border-collapse:collapse;margin-top:20px;}th,td{border:1px solid #ddd;padding:8px;text-align:left;}th{background:#f4f4f4;}</style></head><body>' +
+    '<h2>รายงานยอดหนี้และรายชื่อสมาชิก</h2><p>พิมพ์เมื่อ: ' + new Date().toLocaleString('th-TH') + '</p>' +
+    '<table><tr><th>รหัส</th><th>ชื่อสมาชิก</th><th>ยอดค้างปัจจุบัน</th><th>วงเงินเครดิต</th></tr>' + rows + '</table>' +
+    '<script>window.print();<\/script></body></html>');
+  w.document.close();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
