@@ -599,7 +599,44 @@ function vCus(k) {
     '<div class="card tbl"><table><tr>' +
     '<th>รหัส</th><th>ชื่อสมาชิก</th><th>ยอดค้าง / วงเงิน</th><th>จัดการ</th>' +
     '</tr>' + rows + '</table></div>';
-}
+function vCus(k) {
+  const isMgr = window.USER_ROLE === 'manager';
+  let totalDebtAll = 0;
+  
+  let rows = '';
+  D.customers.slice().sort((a,b)=>a.code.localeCompare(b.code)).forEach(c => {
+    const curB = k.bal[c.id], lim = c.credit_limit || 1000;
+    totalDebtAll += Number(curB) || 0;
+    
+    let actionBtn = '';
+    if (isMgr) {
+      actionBtn = '<div class="row" style="gap:4px">' +
+        '<button class="btn s sm" onclick="fCusAdd(\''+c.id+'\')">เพิ่ม/ลดเงิน</button>' +
+        '<button class="btn s sm" style="color:#d90429;border-color:#d90429" onclick="clearDebt(\''+c.id+'\')">เคลียร์หนี้</button>' +
+        '<button class="btn sm" onclick="fCus(\''+c.id+'\')">แก้ไข</button>' +
+      '</div>';
+    } else {
+      actionBtn = '<div class="row" style="gap:4px">' +
+        '<button class="btn s sm" onclick="fCusAdd(\''+c.id+'\')">จัดการเพิ่มยอดเงิน</button>' +
+      '</div>';
+    }
+
+    rows += '<tr>' +
+      '<td>' + c.code + '</td>' +
+      '<td><b>' + esc(c.name) + '</b></td>' +
+      '<td><b class="' + (curB > 0 ? 'neg' : '') + '">' + F(curB) + '</b> <span class="mu">/ ' + F(lim) + '</span></td>' +
+      '<td>' + actionBtn + '</td>' +
+      '</tr>';
+  });
+
+  let headerBtns = '';
+  if (isMgr) {
+    headerBtns = '<div class="row" style="gap:6px">' +
+      '<button class="btn sm" onclick="exportCusPDF()">📄 Export PDF</button>' +
+      '<button class="btn sm p" onclick="fCus()">+ เพิ่มสมาชิกใหม่</button>' +
+    '</div>';
+  }
+
   // การ์ดแสดงยอดหนี้รวมทั้งหมด (แสดงเฉพาะผู้จัดการเท่านั้น)
   let managerSummaryCard = '';
   if (isMgr) {
