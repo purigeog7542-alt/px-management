@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>เข้าสู่ระบบ - ร้านสวัสดิการทหารม้า</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f4f6f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+    .card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 100%; max-width: 380px; }
+    h2 { color: #1b4332; margin-top: 0; text-align: center; }
+    label { display: block; margin-bottom: 6px; font-weight: bold; font-size: 14px; }
+    input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #d8dedb; border-radius: 6px; box-sizing: border-box; }
+    button { width: 100%; background: #1b4332; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+    button:hover { background: #2d6a4f; }
+    .error { color: #d90429; font-size: 13px; text-align: center; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>🐴 เข้าสู่ระบบ</h2>
+    <div id="err" class="error"></div>
+    <label>อีเมล</label>
+    <input type="email" id="email" placeholder="example@email.com">
+    <label>รหัสผ่าน</label>
+    <input type="password" id="password" placeholder="********">
+    <button onclick="handleLogin()">เข้าสู่ระบบ</button>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://wtyvtjvzvgurybtcnnsf.supabase.co'; 
+    const SUPABASE_ANON_KEY = 'sb_publishable_JLPzS9fSB0-mJN9D3Vssiw_ibQEXq4d'; 
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    async function handleLogin() {
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const errEl = document.getElementById('err');
+      errEl.textContent = '';
+
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) {
+        errEl.textContent = 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+        return;
+      }
+      location.href = 'index.html';
+    }
+  </script>
+</body>
+</html>
