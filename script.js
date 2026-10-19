@@ -93,17 +93,45 @@ async function loadDataFromSupabase() {
 
 function calc() {
   const sold = {}, bal = {}, stockMap = {}, costMap = {};
-  D.sales.forEach(s => (s.items || []).forEach(i => sold[i.pid] = (sold[i.pid] || 0) + (Number(i.qty) || 0)));
   
+  // 1. คำนวณจำนวนที่ขายไปแล้ว
+  D.sales.forEach(s => (s.items || []).forEach(i => {
+    const pid = i.pid || i.product_id;
+    sold[pid] = (sold[pid] || 0) + (Number(i.qty) || 0);
+  }));
+  
+  // 2. คำนวณยอดหนี้สมาชิก
   D.customers.forEach(c => bal[c.id] = c.balance !== undefined ? c.balance : (+c.opening || 0));
   if (window.USER_ROLE === 'manager') {
     D.sales.forEach(s => { if (s.method === 'sign' && s.cust in bal) bal[s.cust] += Number(s.total) || 0; });
     D.payments.forEach(y => { if (y.status === 'ok' && y.cust in bal) bal[y.cust] -= Number(y.amount) || 0; });
   }
 
+  // 3. รวบรวมต้นทุนรวมและจำนวนรับเข้าจากตาราง restocks
+  const restockQtyMap = {};
+  const restockCostMap = {};
+  if (D.restocks && D.restocks.length > 0) {
+    D.restocks.forEach(r => {
+      const pid = r.pid;
+      const units = Number(r.units) || (Number(r.packs || 0) * Number(r.per || 1));
+      const cost = Number(r.cost) || 0;
+      restockQtyMap[pid] = (restockQtyMap[pid] || 0) + units;
+      restockCostMap[pid] = (restockCostMap[pid] || 0) + cost;
+    });
+  }
+
+  // 4. คำนวณสต็อกและต้นทุนต่อหน่วยของแต่ละสินค้า
   D.products.forEach(p => {
-    stockMap[p.id] = p.stock !== undefined ? p.stock : (Number(p.buy_qty || 0) - (sold[p.id] || 0));
-    costMap[p.id] = p.cost !== undefined ? p.cost : (Number(p.buy_cost || 0) / (Number(p.buy_qty) || 1));
+    const pid = p.id;
+    const totalBuyQty = Number(p.buy_qty ?? p.qty ?? 0) || (restockQtyMap[pid] || 0);
+    const totalBuyCost = Number(p.buy_cost ?? p.total_cost ?? p.cost ?? 0) || (restockCostMap[pid] || 0);
+
+    const s = sold[pid] || 0;
+    stockMap[pid] = p.stock !== undefined ? p.stock : Math.max(0, totalBuyQty - s);
+
+    // คำนวณต้นทุนเฉลี่ยต่อหน่วย (ถ้ามีประวัติซื้อ หารด้วยจำนวนที่ซื้อ)
+    const avgCost = totalBuyQty > 0 ? (totalBuyCost / totalBuyQty) : (Number(p.unit_cost) || 0);
+    costMap[pid] = avgCost;
   });
 
   const stock = p => stockMap[p.id] ?? 0;
@@ -111,7 +139,6 @@ function calc() {
   
   return { sold, bal, stock, cost };
 }
-
 const P = id => D.products.find(p => p.id === id);
 const C = id => D.customers.find(c => c.id === id);
 const nextCode = (arr, pre, w) => pre + pad(Math.max(0, ...arr.map(x => parseInt((x.code||'').slice(pre.length))||0)) + 1, w);
