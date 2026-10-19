@@ -1,6 +1,6 @@
-const SUPABASE_URL = 'https://wtyvtjvzvgurybtcnnsf.supabase.co'; 
-const SUPABASE_ANON_KEY = 'sb_publishable_JLPzS9fSB0-mJN9D3Vssiw_ibQEXq4d'; 
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+window.SUPABASE_URL = window.SUPABASE_URL || 'https://wtyvtjvzvgurybtcnnsf.supabase.co';
+window.SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || 'sb_publishable_JLPzS9fSB0-mJN9D3Vssiw_ibQEXq4d';
+window.sb = window.sb || window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
 
 let D = { products: [], customers: [], sales: [], payments: [], restocks: [] };
 let tab = 'sell', cust = '', method = 'sign', cart = {}, q = '';
