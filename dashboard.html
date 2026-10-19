@@ -294,31 +294,44 @@ async function loadDashboardData() {
         globalData.payments.forEach(y => { if (y.cust in bal) bal[y.cust] -= Number(y.amount) || 0; });
         let totalCreditBalance = Object.values(bal).reduce((a, b) => a + b, 0);
         document.getElementById('totalCreditBalance').textContent = F(totalCreditBalance) + ' ฿';
-
-        // 2. คำนวณต้นทุนสินค้าจริงทั้งหมด, ยอดขายเป้าหมาย และกำไรเป้าหมายจากสินค้าในระบบ
+// 2. คำนวณต้นทุนสินค้าจริงทั้งหมดจากตาราง restocks และ products
         let totalActualCost = 0;
         let targetTotalSales = 0;
 
         // คำนวณจำนวนชิ้นที่ขายไปแล้วแต่ละสินค้า
         const soldQtyMap = {};
         globalData.transactions.forEach(tx => {
-          (globalData.items.filter(i => i.transaction_id === tx.id)).forEach(i => {
-            soldQtyMap[i.product_id] = (soldQtyMap[i.product_id] || 0) + (Number(i.qty) || 0);
+          (globalData.items.filter(i => i.transaction_id === tx.id || i.pid === tx.id)).forEach(i => {
+            const pid = i.product_id || i.pid;
+            const qty = Number(i.qty) || 0;
+            if (pid) soldQtyMap[pid] = (soldQtyMap[pid] || 0) + qty;
           });
         });
 
+        // คำนวณต้นทุนรวมจากประวัติการรับของ (restocks) หรือจากตัวสินค้า
+        const productCostMap = {};
+        const productRestockQtyMap = {};
+
+        globalData.restocks.forEach(r => {
+          const pid = r.pid;
+          const cost = Number(r.cost) || 0;
+          const units = Number(r.units) || (Number(r.packs || 0) * Number(r.per || 1));
+          
+          productCostMap[pid] = (productCostMap[pid] || 0) + cost;
+          productRestockQtyMap[pid] = (productRestockQtyMap[pid] || 0) + units;
+        });
+
         globalData.products.forEach(p => {
-          const buyQty = Number(p.buy_qty) || 0;
-          const buyCost = Number(p.buy_cost) || 0;
-          const sold = soldQtyMap[p.id] || 0;
+          const pid = p.id;
+          const buyQty = Number(p.buy_qty ?? p.qty ?? 0) || (productRestockQtyMap[pid] || 0);
+          const buyCost = Number(p.buy_cost ?? p.total_cost ?? p.cost ?? 0) || (productCostMap[pid] || 0);
+          const price = Number(p.price ?? p.unit_price ?? 0);
+          
+          const sold = soldQtyMap[pid] || 0;
           const currentStock = Math.max(0, buyQty - sold); // สต็อกคงเหลือปัจจุบัน
 
-          // ต้นทุนรวมทั้งหมดของสินค้านี้ (คำนวณจากสัดส่วนต้นทุนเฉลี่ย)
-          const unitCost = buyQty > 0 ? (buyCost / buyQty) : 0;
-          totalActualCost += (unitCost * buyQty);
-
-          // ยอดขายเป้าหมายถ้าขายสินค้าคงเหลือในตู้จนหมด
-          targetTotalSales += (currentStock * (Number(p.price) || 0));
+          totalActualCost += buyCost;
+          targetTotalSales += (currentStock * price);
         });
 
         const targetTotalProfit = targetTotalSales - totalActualCost; // กำไรเป้าหมายสุทธิ
@@ -326,7 +339,6 @@ async function loadDashboardData() {
         document.getElementById('totalActualCost').textContent = F(totalActualCost) + ' ฿';
         document.getElementById('targetTotalSales').textContent = F(targetTotalSales) + ' ฿';
         document.getElementById('targetTotalProfit').textContent = F(targetTotalProfit) + ' ฿';
-
         setFilter('all');
 
       } catch (err) {
