@@ -250,7 +250,24 @@
     let costProfitChartInstance = null;
     let topProductsChartInstance = null;
 
+    // ตรวจสอบสิทธิ์การเข้าถึง (เฉพาะ Manager เท่านั้น)
+    async function checkManagerAuth() {
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) {
+        location.replace('login.html');
+        return;
+      }
+      const { data: r } = await sb.from('staff_roles').select('role').eq('user_id', session.user.id).maybeSingle();
+      const role = r?.role || 'seller';
+      if (role !== 'manager') {
+        alert('คุณไม่มีสิทธิ์เข้าถึงหน้าแดชบอร์ดผู้จัดการ');
+        location.replace('index.html');
+      }
+    }
+
     async function loadDashboardData() {
+      await checkManagerAuth();
+
       try {
         const [pRes, sRes, iRes, rRes, mRes, payRes] = await Promise.all([
           sb.from('products').select('*'),
@@ -339,12 +356,9 @@
         const tCost = Number(tx.cost) || 0;
         const d = tx.date;
 
-        // คำนวณประจำวัน (เฉพาะวันนี้)
         if (d === today) { dailySales += tSales; dailyCost += tCost; }
-        // คำนวณประจำเดือนนี้
         if (d && d.startsWith(currentMonth)) { monthlySales += tSales; monthlyCost += tCost; }
 
-        // คำนวณตามช่วงเวลาที่เลือก (Range)
         if (d && d >= startDate && d <= endDate) {
           rangeSales += tSales;
           rangeCost += tCost;
@@ -355,7 +369,6 @@
         }
       });
 
-      // กรองสินค้าขายดีตามช่วงเวลา
       const filteredTxIds = new Set(transactions.filter(tx => tx.date >= startDate && tx.date <= endDate).map(tx => tx.id));
       items.forEach(item => {
         if (filteredTxIds.size === 0 || filteredTxIds.has(item.transaction_id)) {
@@ -365,7 +378,6 @@
         }
       });
 
-      // อัปเดต UI KPIs ให้สัมพันธ์กัน
       document.getElementById('rangeSales').textContent = F(rangeSales) + ' ฿';
       document.getElementById('rangeProfit').textContent = 'กำไรสุทธิ: ' + F(rangeSales - rangeCost) + ' ฿';
 
@@ -375,14 +387,14 @@
       document.getElementById('monthlySales').textContent = F(monthlySales) + ' ฿';
       document.getElementById('monthlyProfit').textContent = 'กำไรเดือนนี้: ' + F(monthlySales - monthlyCost) + ' ฿';
 
-      // วาดกราฟ
       renderSalesCostChart(dailyMap);
       renderCostProfitChart(10879, 7529);
       renderTopProductsChart(productSalesMap);
     }
 
     function renderSalesCostChart(dailyMap) {
-      const dates = Object.keys(dailyMap).sort();
+      // เรียงลำดับวันที่จากอดีตไปปัจจุบัน
+      const dates = Object.keys(dailyMap).sort((a, b) => a.localeCompare(b));
       const salesData = dates.map(d => dailyMap[d].sales);
       const costData = dates.map(d => dailyMap[d].cost);
 
