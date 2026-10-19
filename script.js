@@ -94,7 +94,7 @@ async function loadDataFromSupabase() {
 function calc() {
   const sold = {}, bal = {}, stockMap = {}, costMap = {};
   
-  // 1. คำนวณจำนวนที่ขายไปแล้ว
+  // 1. คำนวณจำนวนที่ขายไปแล้วจากประวัติการขาย
   D.sales.forEach(s => (s.items || []).forEach(i => {
     const pid = i.pid || i.product_id;
     sold[pid] = (sold[pid] || 0) + (Number(i.qty) || 0);
@@ -107,31 +107,19 @@ function calc() {
     D.payments.forEach(y => { if (y.status === 'ok' && y.cust in bal) bal[y.cust] -= Number(y.amount) || 0; });
   }
 
-  // 3. รวบรวมต้นทุนรวมและจำนวนรับเข้าจากตาราง restocks
-  const restockQtyMap = {};
-  const restockCostMap = {};
-  if (D.restocks && D.restocks.length > 0) {
-    D.restocks.forEach(r => {
-      const pid = r.pid;
-      const units = Number(r.units) || (Number(r.packs || 0) * Number(r.per || 1));
-      const cost = Number(r.cost) || 0;
-      restockQtyMap[pid] = (restockQtyMap[pid] || 0) + units;
-      restockCostMap[pid] = (restockCostMap[pid] || 0) + cost;
-    });
-  }
-
-  // 4. คำนวณสต็อกและต้นทุนต่อหน่วยของแต่ละสินค้า
+  // 3. คำนวณสต็อกและต้นทุนต่อหน่วยจากฟิลด์ buy_qty และ buy_cost ในตาราง products โดยตรง
   D.products.forEach(p => {
     const pid = p.id;
-    const totalBuyQty = Number(p.buy_qty ?? p.qty ?? 0) || (restockQtyMap[pid] || 0);
-    const totalBuyCost = Number(p.buy_cost ?? p.total_cost ?? p.cost ?? 0) || (restockCostMap[pid] || 0);
-
+    const buyQty = Number(p.buy_qty) || 0;
+    const buyCost = Number(p.buy_cost) || 0;
     const s = sold[pid] || 0;
-    stockMap[pid] = p.stock !== undefined ? p.stock : Math.max(0, totalBuyQty - s);
 
-    // คำนวณต้นทุนเฉลี่ยต่อหน่วย (ถ้ามีประวัติซื้อ หารด้วยจำนวนที่ซื้อ)
-    const avgCost = totalBuyQty > 0 ? (totalBuyCost / totalBuyQty) : (Number(p.unit_cost) || 0);
-    costMap[pid] = avgCost;
+    // สต็อกคงเหลือ = จำนวนที่ซื้อมาทั้งหมด - จำนวนที่ขายไปแล้ว
+    stockMap[pid] = p.stock !== undefined ? p.stock : Math.max(0, buyQty - s);
+
+    // ต้นทุนต่อหน่วย = ต้นทุนรวม (buy_cost) / จำนวนที่ซื้อรวม (buy_qty)
+    const unitCost = buyQty > 0 ? (buyCost / buyQty) : 0;
+    costMap[pid] = unitCost;
   });
 
   const stock = p => stockMap[p.id] ?? 0;
