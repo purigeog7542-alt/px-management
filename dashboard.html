@@ -188,7 +188,7 @@
     </div>
   </div>
 
-  <!-- 2. สรุปต้นทุนรวมและมูลค่าสต็อกภาพรวม -->
+  <!-- 2. สรุปต้นทุนรวมและมูลค่าสต็อกภาพรวม (แบบคำนวณจริง) -->
   <div class="summary-card">
     <h3>📦 สรุปต้นทุน สต็อก และยอดค้างสมาชิกภาพรวม</h3>
     <div class="summary-row">
@@ -197,15 +197,15 @@
     </div>
     <div class="summary-row">
       <span>ต้นทุนสินค้าทั้งหมดที่ลงไปตามตู้ (รวมทุกล็อต):</span>
-      <b style="color: var(--danger);">10,879.00 ฿</b>
+      <b id="totalActualCost" style="color: var(--danger);">0.00 ฿</b>
     </div>
     <div class="summary-row">
-      <span>ยอดขายรวมเป้าหมาย (หากขายหมดตู้ 1,122 ชิ้น):</span>
-      <b>18,408.00 ฿</b>
+      <span>ยอดขายรวมเป้าหมาย (หากขายสินค้าในสต็อกหมด):</span>
+      <b id="targetTotalSales">0.00 ฿</b>
     </div>
     <div class="summary-row">
-      <span>กำไรสุทธิรวมเป้าหมาย (หากขายหมดตู้):</span>
-      <b style="color: #2d6a4f;">7,529.00 ฿</b>
+      <span>กำไรสุทธิรวมเป้าหมาย (หากขายสินค้าในสต็อกหมด):</span>
+      <b id="targetTotalProfit" style="color: #2d6a4f;">0.00 ฿</b>
     </div>
   </div>
 
