@@ -37,7 +37,7 @@ async function loadDataFromSupabase() {
     const isMgr = window.USER_ROLE === 'manager';
 
     const [pRes, mRes, sRes, iRes, payRes, rRes] = await Promise.all([
-      sb.from('products').select('*'), // บังคับดึงจากตาราง products โดยตรงเพื่อให้เห็นต้นทุน
+      sb.from('products').select('*'),
       sb.from(isMgr ? 'members' : 'members_public').select('*'),
       isMgr ? sb.from('transactions').select('*') : Promise.resolve({ data: [] }),
       isMgr ? sb.from('transaction_items').select('*') : Promise.resolve({ data: [] }),
@@ -115,7 +115,6 @@ function calc() {
 
     stockMap[pid] = p.stock !== undefined ? p.stock : Math.max(0, buyQty - s);
     
-    // ใช้ค่า cost ที่คำนวณมาจาก loadDataFromSupabase หรือคำนวณจาก buy_cost / buy_qty โดยตรง
     let unitCost = Number(p.cost) || 0;
     if (unitCost === 0 && buyQty > 0) {
       unitCost = buyCost / buyQty;
@@ -163,13 +162,14 @@ function render() {
   const appEl = document.getElementById('app');
   if (appEl) appEl.innerHTML = content;
 }
+
 async function clearDebt(id) {
   const c = C(id);
   const k = calc();
   const currentDebt = Number(k.bal[id]) || 0;
 
   if (currentDebt <= 0) {
-    return toast('สมาชิกท่านนี้ไม่มีonยอดหนี้ค้างชำระ');
+    return toast('สมาชิกท่านนี้ไม่มี ยอดหนี้ค้างชำระ');
   }
 
   if (!confirm(`ยืนยันการเคลียร์หนี้ทั้งหมดของ ${c.name} เป็นจำนวน ${F(currentDebt)} ฿ ?`)) {
@@ -195,12 +195,6 @@ async function clearDebt(id) {
     toast('เคลียร์หนี้ไม่สำเร็จ: ' + err.message);
   }
 }
-
-
-
-
-
-
 
 function vSell(k) {
   const ps = D.products.slice().sort((a,b)=>a.code>b.code?1:-1).filter(p=>!q||(p.name+p.code).toLowerCase().includes(q.toLowerCase()));
@@ -295,7 +289,6 @@ function vStock() {
   const rows = D.products.slice().sort((a,b)=>a.code>b.code?1:-1).map(p => {
     const s = stat(p, k);
     
-    // คำนวณทุนต่อหน่วยและกำไรต่อหน่วยโดยตรงจาก buy_cost และ buy_qty เพื่อความแม่นยำ 100%
     const bQty = Number(p.buy_qty) || 0;
     const bCost = Number(p.buy_cost) || 0;
     const c = bQty > 0 ? (bCost / bQty) : 0;
@@ -579,65 +572,6 @@ function vCus(k) {
     '</div>';
   }
 
-  // การ์ดแสดงยอดหนี้รวมทั้งหมด (แสดงเฉพาะผู้จัดการเท่านั้น)
-  let managerSummaryCard = '';
-  if (isMgr) {
-    managerSummaryCard = '<div style="background: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">' +
-      '<div>' +
-        '<div style="font-size: 13px; color: #856404; font-weight: bold;">📊 ยอดหนี้คงค้างสุทธิของสมาชิกทั้งหมด (มุมมองผู้จัดการ)</div>' +
-        '<div style="font-size: 22px; font-weight: bold; color: #d90429; margin-top: 4px;">' + F(totalDebtAll) + ' ฿</div>' +
-      '</div>' +
-      '<button class="btn" onclick="exportCusPDF()" style="background: #856404; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px;">พิมพ์รายงานหนี้</button>' +
-    '</div>';
-  }
-
-  return managerSummaryCard + 
-    '<div class="row sp" style="margin-bottom:12px">' +
-    '<h2>👥 รายชื่อสมาชิก</h2>' +
-    '<div class="row" style="flex:none">' + headerBtns + '</div>' +
-    '</div>' +
-    '<div class="card tbl"><table><tr>' +
-    '<th>รหัส</th><th>ชื่อสมาชิก</th><th>ยอดค้าง / วงเงิน</th><th>จัดการ</th>' +
-    '</tr>' + rows + '</table></div>';
-function vCus(k) {
-  const isMgr = window.USER_ROLE === 'manager';
-  let totalDebtAll = 0;
-  
-  let rows = '';
-  D.customers.slice().sort((a,b)=>a.code.localeCompare(b.code)).forEach(c => {
-    const curB = k.bal[c.id], lim = c.credit_limit || 1000;
-    totalDebtAll += Number(curB) || 0;
-    
-    let actionBtn = '';
-    if (isMgr) {
-      actionBtn = '<div class="row" style="gap:4px">' +
-        '<button class="btn s sm" onclick="fCusAdd(\''+c.id+'\')">เพิ่ม/ลดเงิน</button>' +
-        '<button class="btn s sm" style="color:#d90429;border-color:#d90429" onclick="clearDebt(\''+c.id+'\')">เคลียร์หนี้</button>' +
-        '<button class="btn sm" onclick="fCus(\''+c.id+'\')">แก้ไข</button>' +
-      '</div>';
-    } else {
-      actionBtn = '<div class="row" style="gap:4px">' +
-        '<button class="btn s sm" onclick="fCusAdd(\''+c.id+'\')">จัดการเพิ่มยอดเงิน</button>' +
-      '</div>';
-    }
-
-    rows += '<tr>' +
-      '<td>' + c.code + '</td>' +
-      '<td><b>' + esc(c.name) + '</b></td>' +
-      '<td><b class="' + (curB > 0 ? 'neg' : '') + '">' + F(curB) + '</b> <span class="mu">/ ' + F(lim) + '</span></td>' +
-      '<td>' + actionBtn + '</td>' +
-      '</tr>';
-  });
-
-  let headerBtns = '';
-  if (isMgr) {
-    headerBtns = '<div class="row" style="gap:6px">' +
-      '<button class="btn sm" onclick="exportCusPDF()">📄 Export PDF</button>' +
-      '<button class="btn sm p" onclick="fCus()">+ เพิ่มสมาชิกใหม่</button>' +
-    '</div>';
-  }
-
-  // การ์ดแสดงยอดหนี้รวมทั้งหมด (แสดงเฉพาะผู้จัดการเท่านั้น)
   let managerSummaryCard = '';
   if (isMgr) {
     managerSummaryCard = '<div style="background: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">' +
