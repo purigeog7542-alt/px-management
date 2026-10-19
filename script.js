@@ -198,10 +198,18 @@ function vSell(k) {
 }
 
 function add(id, d) {
-  const k = calc(), p = P(id), n = (cart[id] || 0) + d;
+  const k = calc(), p = P(id);
+  if (!p) return;
+  const n = (cart[id] || 0) + d;
   if (n > k.stock(p) && d > 0) return toast('สินค้าในสต็อกไม่พอ');
   cart[id] = Math.max(0, n);
   render();
+}
+
+function addToCartAndGoSell(pid) {
+  add(pid, 1);
+  goTab('sell');
+  toast('เพิ่มลงตะกร้าเรียบร้อยแล้ว');
 }
 
 async function checkout() {
@@ -247,7 +255,7 @@ function vStock() {
       '</div>';
     } else {
       actionBtns = '<div class="row" style="gap:4px">' +
-        '<button class="btn s sm" onclick="add(\'' + p.id + '\', 1)">+ เพิ่มเข้าตะกร้า</button>' +
+        '<button class="btn s sm" onclick="addToCartAndGoSell(\'' + p.id + '\')">+ เพิ่มเข้าตะกร้า</button>' +
       '</div>';
     }
 
@@ -261,10 +269,8 @@ function vStock() {
       '</tr>';
   }).join('') || '<tr><td colspan="' + (isMgr ? 7 : 5) + '" style="text-align:center" class="mu">ยังไม่มีสินค้าในระบบ</td></tr>';
 
-  let headerBtns = '';
-  if (isMgr) {
-    headerBtns = '<button class="btn sm p" onclick="fProd()">+ เพิ่มสินค้าใหม่</button>';
-  }
+  // 💡 พนักงานขาย (Seller) และ ผู้จัดการ (Manager) จะเห็นปุ่มเพิ่มสินค้าใหม่ได้ทั้งคู่
+  const headerBtns = '<button class="btn sm p" onclick="fProd()">+ เพิ่มสินค้าใหม่</button>';
 
   return '<div class="row sp" style="margin-bottom:12px">' +
     '<h2>📦 คลังสินค้า</h2>' +
@@ -304,28 +310,37 @@ function pv(fromMk) {
 }
 
 function fProd(id) {
+  const isMgr = window.USER_ROLE === 'manager';
   const p = id ? P(id) : null, k = calc();
   const currentIcon = p ? (p.icon || '🥤') : '🥤';
   const emojis = ['🥤', '☕', '🍵', '🥛', '🧃', '🍫', '🍜', '🥔', '🍺', '🍞', '🍪', '🍬', '🧊', '🥫', '🍉', '🍎', '🥚', '🍚', '⚡', '🍭', '🍿'];
   let emojiOptions = '';
   emojis.forEach(em => { emojiOptions += '<option value="'+em+'" '+(currentIcon===em?'selected':'')+'>'+em+' (ไอคอน)</option>'; });
   const oi = ' oninput="pv()"';
-  const costFields = p
-    ? '<label>ต้นทุนเฉลี่ย / หน่วย (บาท)</label><input id="cs" type="number" inputmode="decimal" step="any" value="'+(+k.cost(p).toFixed(2))+'"'+oi+'>'
-    : '<div class="row"><div><label>หน่วยขาย</label><input id="u" value="หน่วย"></div><div><label>ชื่อแพ็ค</label><input id="pn" value="แพ็ค"></div></div>' +
-      '<div class="row"><div><label>ชิ้นต่อแพ็ค</label><input id="pe" type="number" value="1"'+oi+'></div><div><label>จำนวนแพ็คที่ซื้อ</label><input id="pk" type="number" value="1"></div></div>' +
-      '<label>ต้นทุนต่อแพ็ค (บาท)</label><input id="pc" type="number" inputmode="decimal" step="any"'+oi+'>';
+
+  // 💡 ถ้าเป็น Seller เพิ่มสินค้า จะซ่อนช่องกรอกต้นทุน
+  let costFields = '';
+  if (isMgr) {
+    costFields = p
+      ? '<label>ต้นทุนเฉลี่ย / หน่วย (บาท)</label><input id="cs" type="number" inputmode="decimal" step="any" value="'+(+k.cost(p).toFixed(2))+'"'+oi+'>'
+      : '<div class="row"><div><label>หน่วยขาย</label><input id="u" value="หน่วย"></div><div><label>ชื่อแพ็ค</label><input id="pn" value="แพ็ค"></div></div>' +
+        '<div class="row"><div><label>ชิ้นต่อแพ็ค</label><input id="pe" type="number" value="1"'+oi+'></div><div><label>จำนวนแพ็คที่ซื้อ</label><input id="pk" type="number" value="1"></div></div>' +
+        '<label>ต้นทุนต่อแพ็ค (บาท)</label><input id="pc" type="number" inputmode="decimal" step="any"'+oi+'>';
+  } else {
+    costFields = '<div class="row"><div><label>หน่วยขาย</label><input id="u" value="หน่วย"></div><div><label>จำนวนสต็อกตั้งต้น</label><input id="st" type="number" value="0"></div></div>';
+  }
 
   modal('<h2>'+(p?'แก้ไขสินค้า':'เพิ่มสินค้าใหม่')+'</h2><label>ชื่อสินค้า</label><input id="n" value="'+esc(p?p.name:'')+'">' +
     '<label>ไอคอน / Emoji</label><select id="ic" style="font-size:20px;padding:6px">'+emojiOptions+'</select>' + costFields + (p ? '<div class="row"><div><label>หน่วยขาย</label><input id="u" value="'+esc(p.unit)+'"></div><div><label>ชื่อแพ็ค</label><input id="pn" value="'+esc(p.pack_name||'แพ็ค')+'"></div><div><label>ชิ้นต่อแพ็ค</label><input id="pe" type="number" value="'+(p.per||1)+'" oninput="pv()"></div></div>' : '') +
     '<label>ราคาขาย / หน่วย (บาท)</label><input id="pr" type="number" inputmode="decimal" step="any" value="'+(p?p.price:'')+'"'+oi+'>' +
     '<div class="pv" id="pvb"></div>' +
-    '<label>จุดเตือนสั่งซื้อ</label><input id="ro" type="number" value="'+(p?p.reorder:5)+'">' + (p ? '<button class="btn s w" style="margin-top:14px;color:var(--er);border-color:var(--er)" onclick="delProd(\''+id+'\')">🗑 ลบสินค้า</button>': ''),
+    '<label>จุดเตือนสั่งซื้อ</label><input id="ro" type="number" value="'+(p?p.reorder:5)+'">' + (p && isMgr ? '<button class="btn s w" style="margin-top:14px;color:var(--er);border-color:var(--er)" onclick="delProd(\''+id+'\')">🗑 ลบสินค้า</button>': ''),
   async () => {
     const n = V('n').trim(); if(!n) throw{message:'กรอกชื่อสินค้า'};
     const price = +V('pr') || 0; if(!(price>0)) throw{message:'กรอกราคาขาย'};
     
     if(p) {
+      if (!isMgr) throw {message: 'พนักงานขายไม่มีสิทธิ์แก้ไขสินค้า'};
       const updateData = {
         name: n,
         icon: V('ic') || '🥤',
@@ -340,8 +355,20 @@ function fProd(id) {
       const { error } = await sb.from('products').update(updateData).eq('id', p.id);
       if (error) throw error;
     } else {
-      const per = +V('pe')||1, pk = +V('pk')||0, pc = +V('pc')||0;
+      const per = +V('pe')||1;
       const code = nextCode(D.products,'P',3);
+      let initialQty = 0;
+      let initialCost = 0;
+
+      if (isMgr) {
+        const pk = +V('pk')||0, pc = +V('pc')||0;
+        initialQty = per * pk;
+        initialCost = pk * pc;
+      } else {
+        initialQty = +V('st') || 0;
+        initialCost = 0; // Seller เพิ่ม จะบันทึกทุนเป็น 0 บาท
+      }
+
       const newProd = {
         id: code,
         code: code,
@@ -352,15 +379,15 @@ function fProd(id) {
         unit: V('u').trim() || 'หน่วย',
         pack_name: V('pn').trim() || 'แพ็ค',
         per: per,
-        buy_qty: per * pk,
-        buy_cost: pk * pc
+        buy_qty: initialQty,
+        buy_cost: initialCost
       };
       const { error } = await sb.from('products').insert([newProd]);
       if (error) throw error;
     }
     loadDataFromSupabase();
   });
-  pv();
+  if (isMgr) pv();
 }
 
 async function delProd(id) {
