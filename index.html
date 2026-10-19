@@ -4,13 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ร้านสวัสดิการทหารม้า - ระบบขายและสต็อก</title>
-  <title>ร้านสวัสดิการทหารม้า - ระบบขายและสต็อก</title>
-
-<!-- ตั้งชื่อแอปสั้นๆ สำหรับแสดงใต้ไอคอนบนหน้าจอหลัก (Home Screen) -->
 <meta name="apple-mobile-web-app-title" content="ร้านสวัสดิการ">
 <meta name="application-name" content="ร้านสวัสดิการ">
-
-<!-- แท็กระบุไฟล์รูปไอคอน (ใส่รูปภาพ icon.png ไว้ในโฟลเดอร์เดียวกับ index.html) -->
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" type="image/png" href="icon.png">
 
@@ -21,18 +16,40 @@
 </head>
 <body>
 <header>
-  <div><h1>🐴 ร้านสวัสดิการทหารม้า</h1><span>ระบบขายและรายงาน </span></div>
+  <div><h1>🐴 ร้านสวัสดิการทหารม้า</h1><span id="roleBadge">ระบบขายและรายงาน</span></div>
   <div class="row" style="flex:none;gap:6px">
-    <button class="btn s sm" style="color:#fff;border-color:#fff" onclick="fAudit()">🔍 ตรวจสต็อก</button>
-    <button class="btn s sm" style="color:#fff;border-color:#fff" onclick="fSettings()">⚙️ ตั้งค่า</button>
-    
+    <button class="btn s sm" style="color:#fff;border-color:#fff" onclick="handleLogout()">🚪 ออกจากระบบ</button>
   </div>
 </header>
-<div id="app"><div style="text-align:center;padding:50px">กำลังโหลดข้อมูลจาก Supabase...</div></div>
+<div id="app"><div style="text-align:center;padding:50px">กำลังตรวจสอบสิทธิ์...</div></div>
 <nav id="nav"></nav>
 <div id="mo"><div id="mb"></div></div>
 <div id="toast"></div>
 
+<script>
+  // เช็ก Session ตั้งแต่ต้นไฟล์ ถ้ายังไม่ล็อกอิน ดีดไปหน้า login ทันที
+  const SUPABASE_URL = 'https://wtyvtjvzvgurybtcnnsf.supabase.co'; 
+  const SUPABASE_ANON_KEY = 'sb_publishable_JLPzS9fSB0-mJN9D3Vssiw_ibQEXq4d'; 
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  async function checkAuth() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) {
+      location.replace('login.html');
+      return;
+    }
+    const { data: r } = await sb.from('staff_roles').select('role').maybeSingle();
+    window.USER_ROLE = r?.role || 'seller';
+    
+    document.getElementById('roleBadge').textContent = window.USER_ROLE === 'manager' ? 'ผู้จัดการ (Manager)' : 'พนักงานขาย (Seller)';
+  }
+  checkAuth();
+
+  async function handleLogout() {
+    await sb.auth.signOut();
+    location.replace('login.html');
+  }
+</script>
 <script src="script.js"></script>
 </body>
 </html>
