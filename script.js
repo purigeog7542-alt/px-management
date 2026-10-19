@@ -308,7 +308,6 @@ function pv(fromMk) {
     '<div class="row sp"><span>กำไร/หน่วย</span><b class="' + cl + '">' + F(pf) + ' ฿</b></div>';
   box.innerHTML = h;
 }
-
 function fProd(id) {
   const isMgr = window.USER_ROLE === 'manager';
   const p = id ? P(id) : null, k = calc();
@@ -318,22 +317,26 @@ function fProd(id) {
   emojis.forEach(em => { emojiOptions += '<option value="'+em+'" '+(currentIcon===em?'selected':'')+'>'+em+' (ไอคอน)</option>'; });
   const oi = ' oninput="pv()"';
 
-  // 💡 ถ้าเป็น Seller เพิ่มสินค้า จะซ่อนช่องกรอกต้นทุน
+  // กำหนดฟิลด์และกล่องแสดงผลตามสิทธิ์ผู้ใช้งาน
   let costFields = '';
+  let previewBox = '';
+
   if (isMgr) {
     costFields = p
       ? '<label>ต้นทุนเฉลี่ย / หน่วย (บาท)</label><input id="cs" type="number" inputmode="decimal" step="any" value="'+(+k.cost(p).toFixed(2))+'"'+oi+'>'
       : '<div class="row"><div><label>หน่วยขาย</label><input id="u" value="หน่วย"></div><div><label>ชื่อแพ็ค</label><input id="pn" value="แพ็ค"></div></div>' +
         '<div class="row"><div><label>ชิ้นต่อแพ็ค</label><input id="pe" type="number" value="1"'+oi+'></div><div><label>จำนวนแพ็คที่ซื้อ</label><input id="pk" type="number" value="1"></div></div>' +
         '<label>ต้นทุนต่อแพ็ค (บาท)</label><input id="pc" type="number" inputmode="decimal" step="any"'+oi+'>';
+    previewBox = '<div class="pv" id="pvb"></div>'; // แสดงกล่องคำนวณต้นทุน/กำไร เฉพาะ Manager
   } else {
     costFields = '<div class="row"><div><label>หน่วยขาย</label><input id="u" value="หน่วย"></div><div><label>จำนวนสต็อกตั้งต้น</label><input id="st" type="number" value="0"></div></div>';
+    previewBox = ''; // ซ่อนกล่องคำนวณต้นทุน/กำไร สำหรับ Seller
   }
 
   modal('<h2>'+(p?'แก้ไขสินค้า':'เพิ่มสินค้าใหม่')+'</h2><label>ชื่อสินค้า</label><input id="n" value="'+esc(p?p.name:'')+'">' +
     '<label>ไอคอน / Emoji</label><select id="ic" style="font-size:20px;padding:6px">'+emojiOptions+'</select>' + costFields + (p ? '<div class="row"><div><label>หน่วยขาย</label><input id="u" value="'+esc(p.unit)+'"></div><div><label>ชื่อแพ็ค</label><input id="pn" value="'+esc(p.pack_name||'แพ็ค')+'"></div><div><label>ชิ้นต่อแพ็ค</label><input id="pe" type="number" value="'+(p.per||1)+'" oninput="pv()"></div></div>' : '') +
     '<label>ราคาขาย / หน่วย (บาท)</label><input id="pr" type="number" inputmode="decimal" step="any" value="'+(p?p.price:'')+'"'+oi+'>' +
-    '<div class="pv" id="pvb"></div>' +
+    previewBox +
     '<label>จุดเตือนสั่งซื้อ</label><input id="ro" type="number" value="'+(p?p.reorder:5)+'">' + (p && isMgr ? '<button class="btn s w" style="margin-top:14px;color:var(--er);border-color:var(--er)" onclick="delProd(\''+id+'\')">🗑 ลบสินค้า</button>': ''),
   async () => {
     const n = V('n').trim(); if(!n) throw{message:'กรอกชื่อสินค้า'};
@@ -366,7 +369,7 @@ function fProd(id) {
         initialCost = pk * pc;
       } else {
         initialQty = +V('st') || 0;
-        initialCost = 0; // Seller เพิ่ม จะบันทึกทุนเป็น 0 บาท
+        initialCost = 0;
       }
 
       const newProd = {
