@@ -327,11 +327,9 @@ async function loadDashboardData() {
           const buyCost = Number(p.buy_cost ?? p.total_cost ?? p.cost ?? 0) || (productCostMap[pid] || 0);
           const price = Number(p.price ?? p.unit_price ?? 0);
           
-          const sold = soldQtyMap[pid] || 0;
-          const currentStock = Math.max(0, buyQty - sold); // สต็อกคงเหลือปัจจุบัน
-
           totalActualCost += buyCost;
-          targetTotalSales += (currentStock * price);
+          // เปลี่ยนจาก currentStock มาใช้ buyQty (ยอดซื้อสะสมทั้งหมด) คูณกับราคาขาย
+          targetTotalSales += (buyQty * price);
         });
 
         const targetTotalProfit = targetTotalSales - totalActualCost; // กำไรเป้าหมายสุทธิ
