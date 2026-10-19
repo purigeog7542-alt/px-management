@@ -255,7 +255,13 @@ function vStock() {
   const isMgr = window.USER_ROLE === 'manager';
 
   const rows = D.products.slice().sort((a,b)=>a.code>b.code?1:-1).map(p => {
-    const s = stat(p, k), c = k.cost(p), profit = p.price - c;
+    const s = stat(p, k);
+    
+    // คำนวณทุนต่อหน่วยและกำไรต่อหน่วยโดยตรงจาก buy_cost และ buy_qty เพื่อความแม่นยำ 100%
+    const bQty = Number(p.buy_qty) || 0;
+    const bCost = Number(p.buy_cost) || 0;
+    const c = bQty > 0 ? (bCost / bQty) : 0;
+    const profit = Number(p.price || 0) - c;
     
     let actionBtns = '';
     if (isMgr) {
