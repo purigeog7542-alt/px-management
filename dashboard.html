@@ -264,8 +264,7 @@
         location.replace('index.html');
       }
     }
-
-    async function loadDashboardData() {
+async function loadDashboardData() {
       await checkManagerAuth();
 
       try {
@@ -288,13 +287,45 @@
         globalData.members = mRes.data || [];
         globalData.payments = payRes.data || [];
 
-        // คำนวณยอดค้างชำระสมาชิก
+        // 1. คำนวณยอดค้างชำระสมาชิก
         const bal = {};
         globalData.members.forEach(c => bal[c.id] = +c.opening || 0);
         globalData.transactions.forEach(s => { if (s.method === 'sign' && s.cust in bal) bal[s.cust] += Number(s.total) || 0; });
         globalData.payments.forEach(y => { if (y.cust in bal) bal[y.cust] -= Number(y.amount) || 0; });
         let totalCreditBalance = Object.values(bal).reduce((a, b) => a + b, 0);
         document.getElementById('totalCreditBalance').textContent = F(totalCreditBalance) + ' ฿';
+
+        // 2. คำนวณต้นทุนสินค้าจริงทั้งหมด, ยอดขายเป้าหมาย และกำไรเป้าหมายจากสินค้าในระบบ
+        let totalActualCost = 0;
+        let targetTotalSales = 0;
+
+        // คำนวณจำนวนชิ้นที่ขายไปแล้วแต่ละสินค้า
+        const soldQtyMap = {};
+        globalData.transactions.forEach(tx => {
+          (globalData.items.filter(i => i.transaction_id === tx.id)).forEach(i => {
+            soldQtyMap[i.product_id] = (soldQtyMap[i.product_id] || 0) + (Number(i.qty) || 0);
+          });
+        });
+
+        globalData.products.forEach(p => {
+          const buyQty = Number(p.buy_qty) || 0;
+          const buyCost = Number(p.buy_cost) || 0;
+          const sold = soldQtyMap[p.id] || 0;
+          const currentStock = Math.max(0, buyQty - sold); // สต็อกคงเหลือปัจจุบัน
+
+          // ต้นทุนรวมทั้งหมดของสินค้านี้ (คำนวณจากสัดส่วนต้นทุนเฉลี่ย)
+          const unitCost = buyQty > 0 ? (buyCost / buyQty) : 0;
+          totalActualCost += (unitCost * buyQty);
+
+          // ยอดขายเป้าหมายถ้าขายสินค้าคงเหลือในตู้จนหมด
+          targetTotalSales += (currentStock * (Number(p.price) || 0));
+        });
+
+        const targetTotalProfit = targetTotalSales - totalActualCost; // กำไรเป้าหมายสุทธิ
+
+        document.getElementById('totalActualCost').textContent = F(totalActualCost) + ' ฿';
+        document.getElementById('targetTotalSales').textContent = F(targetTotalSales) + ' ฿';
+        document.getElementById('targetTotalProfit').textContent = F(targetTotalProfit) + ' ฿';
 
         setFilter('all');
 
