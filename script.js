@@ -94,30 +94,24 @@ async function loadDataFromSupabase() {
 function calc() {
   const sold = {}, bal = {}, stockMap = {}, costMap = {};
   
-  // 1. คำนวณจำนวนที่ขายไปแล้วจากประวัติการขาย
   D.sales.forEach(s => (s.items || []).forEach(i => {
     const pid = i.pid || i.product_id;
     sold[pid] = (sold[pid] || 0) + (Number(i.qty) || 0);
   }));
   
-  // 2. คำนวณยอดหนี้สมาชิก
   D.customers.forEach(c => bal[c.id] = c.balance !== undefined ? c.balance : (+c.opening || 0));
   if (window.USER_ROLE === 'manager') {
     D.sales.forEach(s => { if (s.method === 'sign' && s.cust in bal) bal[s.cust] += Number(s.total) || 0; });
     D.payments.forEach(y => { if (y.status === 'ok' && y.cust in bal) bal[y.cust] -= Number(y.amount) || 0; });
   }
 
-  // 3. คำนวณสต็อกและต้นทุนต่อหน่วยจากฟิลด์ buy_qty และ buy_cost ในตาราง products โดยตรง
   D.products.forEach(p => {
     const pid = p.id;
     const buyQty = Number(p.buy_qty) || 0;
     const buyCost = Number(p.buy_cost) || 0;
     const s = sold[pid] || 0;
 
-    // สต็อกคงเหลือ = จำนวนที่ซื้อมาทั้งหมด - จำนวนที่ขายไปแล้ว
     stockMap[pid] = p.stock !== undefined ? p.stock : Math.max(0, buyQty - s);
-
-    // ต้นทุนต่อหน่วย = ต้นทุนรวม (buy_cost) / จำนวนที่ซื้อรวม (buy_qty)
     const unitCost = buyQty > 0 ? (buyCost / buyQty) : 0;
     costMap[pid] = unitCost;
   });
@@ -127,6 +121,7 @@ function calc() {
   
   return { sold, bal, stock, cost };
 }
+
 const P = id => D.products.find(p => p.id === id);
 const C = id => D.customers.find(c => c.id === id);
 const nextCode = (arr, pre, w) => pre + pad(Math.max(0, ...arr.map(x => parseInt((x.code||'').slice(pre.length))||0)) + 1, w);
@@ -206,7 +201,7 @@ function vSell(k) {
       const cObj = C(cust), curB = k.bal[cust], limit = cObj.credit_limit || 1000;
       if ((curB + tot) > limit) disableBtn = ' disabled style="opacity:0.5;cursor:not-allowed"';
     }
-    cartHtml = '<div class="card" style="margin-top:14px"><h2 style="margin-top:0">ตะกร้าสินค้า</h2>'+itemsList+'<div class="row sp" style="margin:12px 0;border-top:1px solid var(--bd);padding-top:8px"><b>ยอดรวมทั้งสิ้น</b><b style="font-size:22px;color:var(--pr)">'+F(tot)+' ฿</b></div><button class="btn w"'+disableBtn+' onclick="checkout()">ยืนยันการขาย'+(method==='sign'?' (บันทึกยอดเซ็น)':'')+'</button><button class="btn s w" style="margin-top:6px" onclick="cart={};render()">ล้างตะกร้า</button></div>';
+    cartHtml = '<div class="card" style="margin-top:14px"><h2 style="margin-top:0">ตะกร้าสินค้า</h2>'+itemsList+'<div class="row sp" style="margin:12px 0;border-top:1px solid var(--bd);padding-top:8px"><b>ยอดรวมทั้งสิ้น</b><b style="font-size:22px;color:var(--pr)">'+F(tot)+' ฿</b></div><button class="btn w"'+disableBtn+' onclick="checkout()">ยืนยันการขาย'+(method==='sign'?' (บันทึกยอดเซ็นจ่าย)':'')+'</button><button class="btn s w" style="margin-top:6px" onclick="cart={};render()">ล้างตะกร้า</button></div>';
   }
 
   return '<div class="card"><div class="seg"><button class="'+(method==='sign'?'a':'')+'" onclick="method=\'sign\';render()">✍️ เซ็นจ่าย (สมาชิก)</button><button class="'+(method==='cash'?'a':'')+'" onclick="method=\'cash\';render()">💵 เงินสด</button></div>'+signHtml+'</div><input placeholder="🔍 ค้นหาสินค้า / รหัส" id="sq" value="'+esc(q)+'" oninput="srch(this.value)" style="margin-bottom:12px">'+gridHtml+cartHtml;
@@ -497,9 +492,12 @@ async function delRs(rid) {
 
 function vCus(k) {
   const isMgr = window.USER_ROLE === 'manager';
+  let totalDebtAll = 0;
+  
   let rows = '';
   D.customers.slice().sort((a,b)=>a.code.localeCompare(b.code)).forEach(c => {
     const curB = k.bal[c.id], lim = c.credit_limit || 1000;
+    totalDebtAll += Number(curB) || 0;
     
     let actionBtn = '';
     if (isMgr) {
@@ -508,7 +506,6 @@ function vCus(k) {
         '<button class="btn sm" onclick="fCus(\''+c.id+'\')">แก้ไข</button>' +
       '</div>';
     } else {
-      // 💡 พนักงานขาย (Seller) มีปุ่มจัดการเพิ่มยอดเงินได้อย่างเดียว
       actionBtn = '<div class="row" style="gap:4px">' +
         '<button class="btn s sm" onclick="fCusAdd(\''+c.id+'\')">จัดการเพิ่มยอดเงิน</button>' +
       '</div>';
@@ -530,7 +527,20 @@ function vCus(k) {
     '</div>';
   }
 
-  return '<div class="row sp" style="margin-bottom:12px">' +
+  // การ์ดแสดงยอดหนี้รวมทั้งหมด (แสดงเฉพาะผู้จัดการเท่านั้น)
+  let managerSummaryCard = '';
+  if (isMgr) {
+    managerSummaryCard = '<div style="background: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">' +
+      '<div>' +
+        '<div style="font-size: 13px; color: #856404; font-weight: bold;">📊 ยอดหนี้คงค้างสุทธิของสมาชิกทั้งหมด (มุมมองผู้จัดการ)</div>' +
+        '<div style="font-size: 22px; font-weight: bold; color: #d90429; margin-top: 4px;">' + F(totalDebtAll) + ' ฿</div>' +
+      '</div>' +
+      '<button class="btn" onclick="exportCusPDF()" style="background: #856404; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px;">พิมพ์รายงานหนี้</button>' +
+    '</div>';
+  }
+
+  return managerSummaryCard + 
+    '<div class="row sp" style="margin-bottom:12px">' +
     '<h2>👥 รายชื่อสมาชิก</h2>' +
     '<div class="row" style="flex:none">' + headerBtns + '</div>' +
     '</div>' +
