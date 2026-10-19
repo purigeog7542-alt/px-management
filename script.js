@@ -206,12 +206,6 @@ function add(id, d) {
   render();
 }
 
-function addToCartAndGoSell(pid) {
-  add(pid, 1);
-  goTab('sell');
-  toast('เพิ่มลงตะกร้าเรียบร้อยแล้ว');
-}
-
 async function checkout() {
   const items = Object.keys(cart).filter(i=>cart[i]>0).map(i => ({
     pid: i,
@@ -254,8 +248,9 @@ function vStock() {
         '<button class="btn sm" onclick="fProd(\'' + p.id + '\')">แก้ไข</button>' +
       '</div>';
     } else {
+      // 💡 เปลี่ยนปุ่มฝั่ง Seller เป็นปุ่มปรับสต็อก
       actionBtns = '<div class="row" style="gap:4px">' +
-        '<button class="btn s sm" onclick="addToCartAndGoSell(\'' + p.id + '\')">+ เพิ่มเข้าตะกร้า</button>' +
+        '<button class="btn s sm" onclick="adjustStockManual(\'' + p.id + '\')">ปรับสต็อก</button>' +
       '</div>';
     }
 
@@ -269,7 +264,6 @@ function vStock() {
       '</tr>';
   }).join('') || '<tr><td colspan="' + (isMgr ? 7 : 5) + '" style="text-align:center" class="mu">ยังไม่มีสินค้าในระบบ</td></tr>';
 
-  // 💡 พนักงานขาย (Seller) และ ผู้จัดการ (Manager) จะเห็นปุ่มเพิ่มสินค้าใหม่ได้ทั้งคู่
   const headerBtns = '<button class="btn sm p" onclick="fProd()">+ เพิ่มสินค้าใหม่</button>';
 
   return '<div class="row sp" style="margin-bottom:12px">' +
@@ -308,6 +302,7 @@ function pv(fromMk) {
     '<div class="row sp"><span>กำไร/หน่วย</span><b class="' + cl + '">' + F(pf) + ' ฿</b></div>';
   box.innerHTML = h;
 }
+
 function fProd(id) {
   const isMgr = window.USER_ROLE === 'manager';
   const p = id ? P(id) : null, k = calc();
@@ -317,7 +312,6 @@ function fProd(id) {
   emojis.forEach(em => { emojiOptions += '<option value="'+em+'" '+(currentIcon===em?'selected':'')+'>'+em+' (ไอคอน)</option>'; });
   const oi = ' oninput="pv()"';
 
-  // กำหนดฟิลด์และกล่องแสดงผลตามสิทธิ์ผู้ใช้งาน
   let costFields = '';
   let previewBox = '';
 
@@ -327,10 +321,10 @@ function fProd(id) {
       : '<div class="row"><div><label>หน่วยขาย</label><input id="u" value="หน่วย"></div><div><label>ชื่อแพ็ค</label><input id="pn" value="แพ็ค"></div></div>' +
         '<div class="row"><div><label>ชิ้นต่อแพ็ค</label><input id="pe" type="number" value="1"'+oi+'></div><div><label>จำนวนแพ็คที่ซื้อ</label><input id="pk" type="number" value="1"></div></div>' +
         '<label>ต้นทุนต่อแพ็ค (บาท)</label><input id="pc" type="number" inputmode="decimal" step="any"'+oi+'>';
-    previewBox = '<div class="pv" id="pvb"></div>'; // แสดงกล่องคำนวณต้นทุน/กำไร เฉพาะ Manager
+    previewBox = '<div class="pv" id="pvb"></div>';
   } else {
     costFields = '<div class="row"><div><label>หน่วยขาย</label><input id="u" value="หน่วย"></div><div><label>จำนวนสต็อกตั้งต้น</label><input id="st" type="number" value="0"></div></div>';
-    previewBox = ''; // ซ่อนกล่องคำนวณต้นทุน/กำไร สำหรับ Seller
+    previewBox = '';
   }
 
   modal('<h2>'+(p?'แก้ไขสินค้า':'เพิ่มสินค้าใหม่')+'</h2><label>ชื่อสินค้า</label><input id="n" value="'+esc(p?p.name:'')+'">' +
