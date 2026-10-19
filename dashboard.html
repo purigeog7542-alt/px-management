@@ -380,7 +380,7 @@ async function loadDashboardData() {
       if (start && end) processAndRender(start, end);
     }
 
-    function processAndRender(startDate, endDate) {
+function processAndRender(startDate, endDate) {
       const transactions = globalData.transactions;
       const items = globalData.items;
 
@@ -430,8 +430,22 @@ async function loadDashboardData() {
       document.getElementById('monthlySales').textContent = F(monthlySales) + ' ฿';
       document.getElementById('monthlyProfit').textContent = 'กำไรเดือนนี้: ' + F(monthlySales - monthlyCost) + ' ฿';
 
+      // คำนวณต้นทุนรวมและกำไรเป้าหมายเพื่อส่งให้กราฟโดนัท
+      let totalActualCost = 0;
+      let targetTotalSales = 0;
+      globalData.products.forEach(p => {
+        const pid = p.id;
+        const buyQty = Number(p.buy_qty ?? p.qty ?? 0);
+        const buyCost = Number(p.buy_cost ?? p.total_cost ?? p.cost ?? 0);
+        const price = Number(p.price ?? p.unit_price ?? 0);
+        
+        totalActualCost += buyCost;
+        targetTotalSales += (buyQty * price);
+      });
+      const targetTotalProfit = targetTotalSales - totalActualCost;
+
       renderSalesCostChart(dailyMap);
-      renderCostProfitChart(10879, 7529);
+      renderCostProfitChart(totalActualCost, targetTotalProfit); // ส่งค่าจริงเข้ากราฟ
       renderTopProductsChart(productSalesMap);
     }
 
