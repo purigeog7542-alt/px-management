@@ -114,7 +114,12 @@ function calc() {
     const s = sold[pid] || 0;
 
     stockMap[pid] = p.stock !== undefined ? p.stock : Math.max(0, buyQty - s);
-    const unitCost = buyQty > 0 ? (buyCost / buyQty) : 0;
+    
+    // ใช้ค่า cost ที่คำนวณมาจาก loadDataFromSupabase หรือคำนวณจาก buy_cost / buy_qty โดยตรง
+    let unitCost = Number(p.cost) || 0;
+    if (unitCost === 0 && buyQty > 0) {
+      unitCost = buyCost / buyQty;
+    }
     costMap[pid] = unitCost;
   });
 
