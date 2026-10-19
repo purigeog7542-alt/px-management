@@ -38,7 +38,7 @@
       location.replace('login.html');
       return;
     }
-    const { data: r } = await sb.from('staff_roles').select('role').maybeSingle();
+    const { data: r } = await sb.from('staff_roles').select('role').eq('user_id', session.user.id).maybeSingle();
     window.USER_ROLE = r?.role || 'seller';
     
     document.getElementById('roleBadge').textContent = window.USER_ROLE === 'manager' ? 'ผู้จัดการ (Manager)' : 'พนักงานขาย (Seller)';
