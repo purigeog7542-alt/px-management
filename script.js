@@ -32,25 +32,6 @@ function toast(t) {
 const F = n => (+n||0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-function exportToCSV(filename, rows) {
-  let processRow = function (row) {
-    return row.map(val => {
-      if (val === null || val === undefined) return '';
-      let escaped = String(val).replace(/"/g, '""');
-      if (escaped.search(/("|,|\n)/g) >= 0) escaped = '"' + escaped + '"';
-      return escaped;
-    }).join(',');
-  };
-  let csv = '\uFEFF' + rows.map(processRow).join('\n');
-  let blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  let link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.setAttribute('download', filename);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-}
-
 async function loadDataFromSupabase() {
   try {
     const isMgr = window.USER_ROLE === 'manager';
@@ -78,10 +59,17 @@ async function loadDataFromSupabase() {
       }))
     }));
 
-    D.products = (pRes.data || []).map(p => ({
-      ...p,
-      stock: isMgr ? (p.buy_qty - (transactions.flatMap(t => t.items).filter(i => i.pid === p.id).reduce((s,i) => s + i.qty, 0))) : p.stock
-    }));
+    D.products = (pRes.data || []).map(p => {
+      let unitCost = 0;
+      if (isMgr && p.buy_qty > 0) {
+        unitCost = Number(p.buy_cost || 0) / Number(p.buy_qty || 1);
+      }
+      return {
+        ...p,
+        cost: unitCost,
+        stock: isMgr ? (p.buy_qty - (transactions.flatMap(t => t.items).filter(i => i.pid === p.id).reduce((s,i) => s + i.qty, 0))) : p.stock
+      };
+    });
 
     D.customers = (mRes.data || []).map(m => ({ 
       id: m.id, 
@@ -104,7 +92,7 @@ async function loadDataFromSupabase() {
 }
 
 function calc() {
-  const sold = {}, bal = {}, stockMap = {};
+  const sold = {}, bal = {}, stockMap = {}, costMap = {};
   D.sales.forEach(s => (s.items || []).forEach(i => sold[i.pid] = (sold[i.pid] || 0) + (Number(i.qty) || 0)));
   
   D.customers.forEach(c => bal[c.id] = c.balance !== undefined ? c.balance : (+c.opening || 0));
@@ -115,10 +103,11 @@ function calc() {
 
   D.products.forEach(p => {
     stockMap[p.id] = p.stock !== undefined ? p.stock : (Number(p.buy_qty || 0) - (sold[p.id] || 0));
+    costMap[p.id] = p.cost !== undefined ? p.cost : (Number(p.buy_cost || 0) / (Number(p.buy_qty) || 1));
   });
 
   const stock = p => stockMap[p.id] ?? 0;
-  const cost = p => 0; 
+  const cost = p => costMap[p.id] ?? 0;
   
   return { sold, bal, stock, cost };
 }
@@ -247,20 +236,225 @@ function vStock() {
   const isMgr = window.USER_ROLE === 'manager';
 
   const rows = D.products.slice().sort((a,b)=>a.code>b.code?1:-1).map(p => {
-    const s = p.stock <= 0 ? ['หมด', 'r'] : ['ปกติ', 'g'];
-    return '<tr><td><b>' + esc(p.name) + '</b><br><span class="mu">' + p.code + '</span></td>' +
+    const s = stat(p, k), c = k.cost(p), profit = p.price - c;
+    
+    let actionBtns = '';
+    if (isMgr) {
+      actionBtns = '<div class="row" style="gap:4px">' +
+        '<button class="btn s sm" onclick="adjustStockManual(\'' + p.id + '\')">ปรับสต็อก</button>' +
+        '<button class="btn s sm" onclick="fRestock(\'' + p.id + '\')">รับของ</button>' +
+        '<button class="btn sm" onclick="fProd(\'' + p.id + '\')">แก้ไข</button>' +
+      '</div>';
+    } else {
+      actionBtns = '<div class="row" style="gap:4px">' +
+        '<button class="btn s sm" onclick="add(\'' + p.id + '\', 1)">+ เพิ่มเข้าตะกร้า</button>' +
+      '</div>';
+    }
+
+    return '<tr>' +
+      '<td><b>' + esc(p.name) + '</b><br><span class="mu">' + p.code + '</span></td>' +
       '<td><b>' + k.stock(p) + '</b> ' + esc(p.unit) + '</td>' +
       '<td>' + F(p.price) + ' ฿</td>' +
-      (isMgr ? '<td>-</td><td>-</td>' : '') +
-      '<td><span class="badge ' + s[1] + '">' + s[0] + '</span></td>' +
-      '<td>-</td>' +
+      (isMgr ? '<td>' + F(c) + ' ฿</td><td><b style="color:var(--pr)">' + F(profit) + ' ฿</b></td>' : '') +
+      '<td><span class="badge ' + (s[1] === 'r' ? 'er' : 'ok') + '">' + s[0] + '</span></td>' +
+      '<td>' + actionBtns + '</td>' +
       '</tr>';
-  }).join('') || '<tr><td colspan="7" style="text-align:center" class="mu">ยังไม่มีสินค้าในระบบ</td></tr>';
+  }).join('') || '<tr><td colspan="' + (isMgr ? 7 : 5) + '" style="text-align:center" class="mu">ยังไม่มีสินค้าในระบบ</td></tr>';
 
-  return '<div class="row sp" style="margin-bottom:12px"><h2>📦 คลังสินค้า</h2></div>' +
-    '<div class="card tbl"><table><tr><th>สินค้า</th><th>คงเหลือ</th><th>ราคาขาย</th>' + 
+  let headerBtns = '';
+  if (isMgr) {
+    headerBtns = '<button class="btn sm p" onclick="fProd()">+ เพิ่มสินค้าใหม่</button>';
+  }
+
+  return '<div class="row sp" style="margin-bottom:12px">' +
+    '<h2>📦 คลังสินค้า</h2>' +
+    '<div class="row" style="flex:none;gap:6px">' + headerBtns + '</div>' +
+    '</div>' +
+    '<div class="card tbl"><table><tr>' +
+    '<th>สินค้า</th><th>คงเหลือ</th><th>ราคาขาย</th>' + 
     (isMgr ? '<th>ทุน/หน่วย</th><th>กำไร/หน่วย</th>' : '') + 
-    '<th>สถานะ</th><th>จัดการ</th></tr>' + rows + '</table></div>';
+    '<th>สถานะ</th><th>จัดการ</th>' +
+    '</tr>' + rows + '</table></div>';
+}
+
+function modal(h, save) {
+  const mb = document.getElementById('mb');
+  const mo = document.getElementById('mo');
+  if (!mb || !mo) return;
+  mb.innerHTML = h + '<div class="row" style="margin-top:14px"><button class="btn s" onclick="closeM()">ปิด</button>'+(save?'<button class="btn" id="sv">บันทึก</button>':'')+'</div>';
+  mo.style.display = 'flex';
+  if (save) document.getElementById('sv').onclick = async () => { try { await save(); closeM(); } catch(e) { toast('ไม่สำเร็จ: '+e.message); } };
+}
+
+const closeM = () => {
+  const mo = document.getElementById('mo');
+  if (mo) mo.style.display = 'none';
+};
+const V = id => document.getElementById(id) ? document.getElementById(id).value : '';
+
+function pv(fromMk) {
+  const g = id => document.getElementById(id), n = id => g(id) ? (+g(id).value || 0) : 0;
+  const c = g('cs') ? n('cs') : (n('pe') > 0 ? n('pc') / n('pe') : 0);
+  if (fromMk && n('mk') > 0 && c > 0 && g('pr')) g('pr').value = Math.ceil(c * (1 + n('mk') / 100));
+  const box = g('pvb'); if (!box) return;
+  const pr = n('pr'), pf = pr - c, cl = pf < 0 ? 'neg' : '';
+  let h = '<div class="row sp"><span>ต้นทุน/หน่วย</span><b>' + F(c) + ' ฿</b></div>' +
+    '<div class="row sp"><span>กำไร/หน่วย</span><b class="' + cl + '">' + F(pf) + ' ฿</b></div>';
+  box.innerHTML = h;
+}
+
+function fProd(id) {
+  const p = id ? P(id) : null, k = calc();
+  const currentIcon = p ? (p.icon || '🥤') : '🥤';
+  const emojis = ['🥤', '☕', '🍵', '🥛', '🧃', '🍫', '🍜', '🥔', '🍺', '🍞', '🍪', '🍬', '🧊', '🥫', '🍉', '🍎', '🥚', '🍚', '⚡', '🍭', '🍿'];
+  let emojiOptions = '';
+  emojis.forEach(em => { emojiOptions += '<option value="'+em+'" '+(currentIcon===em?'selected':'')+'>'+em+' (ไอคอน)</option>'; });
+  const oi = ' oninput="pv()"';
+  const costFields = p
+    ? '<label>ต้นทุนเฉลี่ย / หน่วย (บาท)</label><input id="cs" type="number" inputmode="decimal" step="any" value="'+(+k.cost(p).toFixed(2))+'"'+oi+'>'
+    : '<div class="row"><div><label>หน่วยขาย</label><input id="u" value="หน่วย"></div><div><label>ชื่อแพ็ค</label><input id="pn" value="แพ็ค"></div></div>' +
+      '<div class="row"><div><label>ชิ้นต่อแพ็ค</label><input id="pe" type="number" value="1"'+oi+'></div><div><label>จำนวนแพ็คที่ซื้อ</label><input id="pk" type="number" value="1"></div></div>' +
+      '<label>ต้นทุนต่อแพ็ค (บาท)</label><input id="pc" type="number" inputmode="decimal" step="any"'+oi+'>';
+
+  modal('<h2>'+(p?'แก้ไขสินค้า':'เพิ่มสินค้าใหม่')+'</h2><label>ชื่อสินค้า</label><input id="n" value="'+esc(p?p.name:'')+'">' +
+    '<label>ไอคอน / Emoji</label><select id="ic" style="font-size:20px;padding:6px">'+emojiOptions+'</select>' + costFields + (p ? '<div class="row"><div><label>หน่วยขาย</label><input id="u" value="'+esc(p.unit)+'"></div><div><label>ชื่อแพ็ค</label><input id="pn" value="'+esc(p.pack_name||'แพ็ค')+'"></div><div><label>ชิ้นต่อแพ็ค</label><input id="pe" type="number" value="'+(p.per||1)+'" oninput="pv()"></div></div>' : '') +
+    '<label>ราคาขาย / หน่วย (บาท)</label><input id="pr" type="number" inputmode="decimal" step="any" value="'+(p?p.price:'')+'"'+oi+'>' +
+    '<div class="pv" id="pvb"></div>' +
+    '<label>จุดเตือนสั่งซื้อ</label><input id="ro" type="number" value="'+(p?p.reorder:5)+'">' + (p ? '<button class="btn s w" style="margin-top:14px;color:var(--er);border-color:var(--er)" onclick="delProd(\''+id+'\')">🗑 ลบสินค้า</button>': ''),
+  async () => {
+    const n = V('n').trim(); if(!n) throw{message:'กรอกชื่อสินค้า'};
+    const price = +V('pr') || 0; if(!(price>0)) throw{message:'กรอกราคาขาย'};
+    
+    if(p) {
+      const updateData = {
+        name: n,
+        icon: V('ic') || '🥤',
+        price: price,
+        reorder: +V('ro') || 5,
+        unit: V('u').trim() || p.unit,
+        pack_name: V('pn').trim() || p.pack_name,
+        per: +V('pe') || p.per || 1
+      };
+      if(V('cs') !== '') updateData.buy_cost = +V('cs') * p.buy_qty;
+
+      const { error } = await sb.from('products').update(updateData).eq('id', p.id);
+      if (error) throw error;
+    } else {
+      const per = +V('pe')||1, pk = +V('pk')||0, pc = +V('pc')||0;
+      const code = nextCode(D.products,'P',3);
+      const newProd = {
+        id: code,
+        code: code,
+        name: n,
+        icon: V('ic') || '🥤',
+        price: price,
+        reorder: +V('ro') || 5,
+        unit: V('u').trim() || 'หน่วย',
+        pack_name: V('pn').trim() || 'แพ็ค',
+        per: per,
+        buy_qty: per * pk,
+        buy_cost: pk * pc
+      };
+      const { error } = await sb.from('products').insert([newProd]);
+      if (error) throw error;
+    }
+    loadDataFromSupabase();
+  });
+  pv();
+}
+
+async function delProd(id) {
+  if (D.sales.some(s => (s.items || []).some(i => i.pid === id))) return toast('ลบไม่ได้ มีประวัติการขายสินค้านี้แล้ว');
+  if (!confirm('ยืนยันลบสินค้านี้ออกจากระบบ?')) return;
+  const { error } = await sb.from('products').delete().eq('id', id);
+  if (error) return toast('ลบไม่สำเร็จ: ' + error.message);
+  closeM(); loadDataFromSupabase(); toast('ลบสินค้าแล้ว');
+}
+
+async function adjustStockManual(pid) {
+  const p = D.products.find(x => x.id === pid);
+  if (!p) return;
+  const k = calc();
+  const currentStock = k.stock(p);
+
+  const newStockStr = prompt(`ปรับแก้สต็อกสินค้า: [${p.code}] ${p.name}\nจำนวนคงเหลือปัจจุบัน: ${currentStock} ${p.unit}\n\nกรุณากรอกจำนวนสต็อกคงเหลือที่ถูกต้อง:`, currentStock);
+  if (newStockStr === null) return;
+
+  const newStock = parseInt(newStockStr);
+  if (isNaN(newStock)) {
+    alert('กรุณากรอกเป็นตัวเลขเท่านั้น');
+    return;
+  }
+
+  const diff = newStock - currentStock;
+  if (diff === 0) {
+    toast('ยอดสต็อกตรงกันอยู่แล้ว ไม่มีการเปลี่ยนแปลง');
+    return;
+  }
+
+  const soldQty = k.sold[pid] || 0;
+  const newBuyQty = newStock + soldQty;
+
+  try {
+    const { error } = await sb.from('products').update({ buy_qty: newBuyQty }).eq('id', pid);
+    if (error) throw error;
+
+    toast(`ปรับสต็อกสินค้า ${p.name} เป็น ${newStock} ${p.unit} เรียบร้อยแล้ว`);
+    loadDataFromSupabase();
+  } catch (err) {
+    toast('ปรับสต็อกไม่สำเร็จ: ' + err.message);
+  }
+}
+
+function fRestock(id) {
+  const p = P(id), k = calc(), pn = esc(p.pack_name || 'แพ็ค');
+  const hh = D.restocks.filter(r => r.pid === id).sort((a, b) => b.ts - a.ts).slice(0, 8).map(r =>
+    '<div class="row sp mu" style="margin:4px 0"><span>' + new Date(r.ts).toLocaleDateString('th-TH') + ' · ' + r.packs + ' ' + pn + ' (' + r.units + ' ' + esc(p.unit) + ') · ' + F(r.cost) + ' ฿</span><span style="flex:none"><button class="btn s sm" onclick="delRs(\'' + r.id + '\')">ลบ</button></span></div>').join('')
+    || '<div class="mu">ยังไม่มีประวัติรับของ</div>';
+  modal('<h2>รับสินค้าเข้า: ' + esc(p.name) + '</h2><div class="mu">คงเหลือ ' + k.stock(p) + ' ' + esc(p.unit) + ' · ต้นทุนเฉลี่ย ' + F(k.cost(p)) + ' ฿/หน่วย</div>' +
+    '<label>จำนวน' + pn + 'ที่รับ</label><input id="pk" type="number" inputmode="decimal"><label>ต้นทุนรวมต่อ' + pn + ' (บาท)</label><input id="pc" type="number" inputmode="decimal" step="any">' +
+    '<h2 style="margin-top:14px">ประวัติการรับของ</h2>' + hh,
+  async () => {
+    const pk = +V('pk'); if (!(pk > 0)) throw {message: 'กรอกจำนวน'};
+    const pc = +V('pc') || 0; if (!(pc > 0)) throw {message: 'ไม่อนุญาตให้ต้นทุนเป็น 0 บาท'};
+    const per = p.per || 1;
+    const newRestock = {
+      id: 'R' + Date.now(),
+      pid: id,
+      ts: Date.now(),
+      date: today(),
+      packs: pk,
+      per: per,
+      units: pk * per,
+      cost: pk * pc
+    };
+    const { error: rErr } = await sb.from('restocks').insert([newRestock]);
+    if (rErr) throw rErr;
+
+    const { error: pErr } = await sb.from('products').update({
+      buy_qty: p.buy_qty + (pk * per),
+      buy_cost: p.buy_cost + (pk * pc)
+    }).eq('id', id);
+    if (pErr) throw pErr;
+
+    loadDataFromSupabase();
+  });
+}
+
+async function delRs(rid) {
+  const r = D.restocks.find(x => x.id === rid), p = r && P(r.pid); if (!p) return;
+  if (calc().stock(p) - r.units < 0) return toast('ลบไม่ได้ สต็อกจะติดลบ (มีการขายไปแล้ว)');
+  if (!confirm('ลบรายการรับของนี้? สต็อกและต้นทุนจะถูกปรับกลับ')) return;
+  
+  await sb.from('restocks').delete().eq('id', rid);
+  await sb.from('products').update({
+    buy_qty: p.buy_qty - r.units,
+    buy_cost: p.buy_cost - r.cost
+  }).eq('id', p.id);
+
+  loadDataFromSupabase();
+  toast('ลบรายการรับของแล้ว');
+  closeM();
 }
 
 function vCus(k) {
