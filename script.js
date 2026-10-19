@@ -37,7 +37,7 @@ async function loadDataFromSupabase() {
     const isMgr = window.USER_ROLE === 'manager';
 
     const [pRes, mRes, sRes, iRes, payRes, rRes] = await Promise.all([
-      sb.from(isMgr ? 'products' : 'products_public').select('*'),
+      sb.from('products').select('*'), // บังคับดึงจากตาราง products โดยตรงเพื่อให้เห็นต้นทุน
       sb.from(isMgr ? 'members' : 'members_public').select('*'),
       isMgr ? sb.from('transactions').select('*') : Promise.resolve({ data: [] }),
       isMgr ? sb.from('transaction_items').select('*') : Promise.resolve({ data: [] }),
@@ -61,13 +61,15 @@ async function loadDataFromSupabase() {
 
     D.products = (pRes.data || []).map(p => {
       let unitCost = 0;
-      if (isMgr && p.buy_qty > 0) {
-        unitCost = Number(p.buy_cost || 0) / Number(p.buy_qty || 1);
+      const bQty = Number(p.buy_qty) || 0;
+      const bCost = Number(p.buy_cost) || 0;
+      if (bQty > 0) {
+        unitCost = bCost / bQty;
       }
       return {
         ...p,
         cost: unitCost,
-        stock: isMgr ? (p.buy_qty - (transactions.flatMap(t => t.items).filter(i => i.pid === p.id).reduce((s,i) => s + i.qty, 0))) : p.stock
+        stock: p.stock !== undefined ? p.stock : Math.max(0, bQty - (transactions.flatMap(t => t.items).filter(i => i.pid === p.id).reduce((s,i) => s + i.qty, 0)))
       };
     });
 
