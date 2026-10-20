@@ -603,23 +603,24 @@ function fCusAdd(id) {
     const amt = +V('add_amt') || 0;
     if (!(amt > 0)) throw {message: 'กรุณากรอกจำนวนเงินให้ถูกต้อง'};
     
-    const newPayment = {
-      id: Date.now(), // แก้ไขให้ใช้เลข Timestamp ป้องกันปัญหา type bigint/text ในตาราง payments
-      cust: id,
-      ts: Date.now(),
-      date: today(),
-      amount: amt,
-      method: 'cash', // กำหนดค่า method ป้องกัน not-null constraint error
-      status: 'ok'
-    };
+    // เรียกใช้ผ่าน Supabase RPC function (add_payment) เพื่อข้ามข้อจำกัด RLS ของพนักงานขาย
+    const { error } = await sb.rpc('add_payment', {
+      p_id: String(Date.now()),
+      p_cust: id,
+      p_amount: amt,
+      p_method: 'cash',
+      p_date: today(),
+      p_ts: Date.now(),
+      p_status: 'ok'
+    });
 
-    const { error } = await sb.from('payments').insert([newPayment]);
     if (error) throw error;
 
     loadDataFromSupabase();
     toast('บันทึกเพิ่มยอดเงินสำเร็จ');
   });
 }
+
 
 function fCus(id) {
   const isMgr = window.USER_ROLE === 'manager';
