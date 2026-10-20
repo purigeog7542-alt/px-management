@@ -178,11 +178,12 @@ async function clearDebt(id) {
 
   try {
     const newPayment = {
-      id: 'P' + Date.now(),
+      id: Date.now(), // แก้ไขให้ใช้เลข Timestamp ป้องกันปัญหา type bigint/text ในตาราง payments
       cust: id,
       ts: Date.now(),
       date: today(),
       amount: currentDebt,
+      method: 'cash', // กำหนดค่า method ป้องกัน not-null constraint error
       status: 'ok'
     };
 
@@ -602,11 +603,12 @@ function fCusAdd(id) {
     if (!(amt > 0)) throw {message: 'กรุณากรอกจำนวนเงินให้ถูกต้อง'};
     
     const newPayment = {
-      id: 'P' + Date.now(),
+      id: Date.now(), // แก้ไขให้ใช้เลข Timestamp ป้องกันปัญหา type bigint/text ในตาราง payments
       cust: id,
       ts: Date.now(),
       date: today(),
       amount: amt,
+      method: 'cash', // กำหนดค่า method ป้องกัน not-null constraint error
       status: 'ok'
     };
 
