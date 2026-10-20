@@ -257,10 +257,11 @@ function add(id, d) {
 }
 
 async function checkout() {
-  const items = Object.keys(cart).filter(i=>cart[i]>0).map(i => ({
+  const items = Object.keys(cart).filter(i => cart[i] > 0).map(i => ({
     pid: i,
+    name: P(i) ? P(i).name : 'สินค้า', // ส่งชื่อสินค้าไปป้องกันปัญหา Not-Null Constraint
     qty: cart[i],
-    price: P(i).price
+    price: P(i) ? P(i).price : 0
   }));
 
   if (!items.length) return;
