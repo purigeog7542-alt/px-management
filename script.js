@@ -598,17 +598,17 @@ function vCus(k) {
 function fCusAdd(id) {
   const c = C(id);
   if (!c) return;
-  modal('<h2>จัดการยอดเงินสมาชิก: ' + esc(c.name) + '</h2><label>จำนวนเงินที่ต้องการเพิ่ม (บาท)</label><input id="add_amt" type="number" inputmode="decimal" step="any" placeholder="ระบุตัวเลข เช่น 100">',
+  modal('<h2>เพิ่มยอดหนี้สมาชิก: ' + esc(c.name) + '</h2><label>จำนวนเงินที่ต้องการเพิ่มหนี้ (บาท)</label><input id="add_amt" type="number" inputmode="decimal" step="any" placeholder="ระบุตัวเลข เช่น 100">',
   async () => {
     const amt = +V('add_amt') || 0;
     if (!(amt > 0)) throw {message: 'กรุณากรอกจำนวนเงินให้ถูกต้อง'};
     
-    // เรียกใช้ผ่าน Supabase RPC function (add_payment) เพื่อข้ามข้อจำกัด RLS ของพนักงานขาย
+    // บันทึกยอดเพิ่มหนี้ (ใช้ค่าบวกเสมอ เพื่อบวกเข้ายอดหนี้)
     const { error } = await sb.rpc('add_payment', {
       p_id: String(Date.now()),
       p_cust: id,
       p_amount: amt,
-      p_method: 'cash',
+      p_method: 'adjustment',
       p_date: today(),
       p_ts: Date.now(),
       p_status: 'ok'
@@ -617,7 +617,7 @@ function fCusAdd(id) {
     if (error) throw error;
 
     loadDataFromSupabase();
-    toast('บันทึกเพิ่มยอดเงินสำเร็จ');
+    toast('บันทึกเพิ่มหนี้สำเร็จ');
   });
 }
 
