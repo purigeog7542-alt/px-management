@@ -102,11 +102,20 @@ function calc() {
   }));
   
   D.customers.forEach(c => bal[c.id] = c.balance !== undefined ? c.balance : (+c.opening || 0));
+  
   if (window.USER_ROLE === 'manager') {
     D.sales.forEach(s => { if (s.method === 'sign' && s.cust in bal) bal[s.cust] += Number(s.total) || 0; });
     
-    // เปลี่ยนจาก -= เป็น += เพื่อให้การเพิ่มหนี้บวกเข้าไปยอดหนี้ถูกต้อง
-    D.payments.forEach(y => { if (y.status === 'ok' && y.cust in bal) bal[y.cust] += Number(y.amount) || 0; });
+    // แยกประเภท: ถ้าเป็นการเพิ่มหนี้ (adjustment) ให้บวกเพิ่ม, ถ้าเป็นการเคลียร์หนี้ให้หักลบออก
+    D.payments.forEach(y => { 
+      if (y.status === 'ok' && y.cust in bal) {
+        if (y.method === 'adjustment') {
+          bal[y.cust] += Number(y.amount) || 0; 
+        } else {
+          bal[y.cust] -= Number(y.amount) || 0; 
+        }
+      } 
+    });
   }
 
   D.products.forEach(p => {
@@ -129,7 +138,6 @@ function calc() {
   
   return { sold, bal, stock, cost };
 }
-
 const P = id => D.products.find(p => p.id === id);
 const C = id => D.customers.find(c => c.id === id);
 const nextCode = (arr, pre, w) => pre + pad(Math.max(0, ...arr.map(x => parseInt((x.code||'').slice(pre.length))||0)) + 1, w);
