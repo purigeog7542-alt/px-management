@@ -547,14 +547,16 @@ function vCus(k) {
     
     let actionBtn = '';
     if (isMgr) {
+      // มุมมองผู้จัดการ: เห็นครบทุกปุ่ม (เพิ่มหนี้, เคลียร์หนี้, แก้ไข)
       actionBtn = '<div class="row" style="gap:4px">' +
-        '<button class="btn s sm" onclick="fCusAdd(\''+c.id+'\')">เพิ่ม/ลดเงิน</button>' +
+        '<button class="btn s sm" onclick="fCusAdd(\''+c.id+'\')">เพิ่มหนี้</button>' +
         '<button class="btn s sm" style="color:#d90429;border-color:#d90429" onclick="clearDebt(\''+c.id+'\')">เคลียร์หนี้</button>' +
         '<button class="btn sm" onclick="fCus(\''+c.id+'\')">แก้ไข</button>' +
       '</div>';
     } else {
+      // มุมมองคนขาย: เห็นเฉพาะปุ่มเพิ่มหนี้เท่านั้น
       actionBtn = '<div class="row" style="gap:4px">' +
-        '<button class="btn s sm" onclick="fCusAdd(\''+c.id+'\')">จัดการเพิ่มยอดเงิน</button>' +
+        '<button class="btn s sm" onclick="fCusAdd(\''+c.id+'\')">เพิ่มหนี้</button>' +
       '</div>';
     }
 
