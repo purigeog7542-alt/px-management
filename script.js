@@ -104,7 +104,9 @@ function calc() {
   D.customers.forEach(c => bal[c.id] = c.balance !== undefined ? c.balance : (+c.opening || 0));
   if (window.USER_ROLE === 'manager') {
     D.sales.forEach(s => { if (s.method === 'sign' && s.cust in bal) bal[s.cust] += Number(s.total) || 0; });
-    D.payments.forEach(y => { if (y.status === 'ok' && y.cust in bal) bal[y.cust] -= Number(y.amount) || 0; });
+    
+    // เปลี่ยนจาก -= เป็น += เพื่อให้การเพิ่มหนี้บวกเข้าไปยอดหนี้ถูกต้อง
+    D.payments.forEach(y => { if (y.status === 'ok' && y.cust in bal) bal[y.cust] += Number(y.amount) || 0; });
   }
 
   D.products.forEach(p => {
